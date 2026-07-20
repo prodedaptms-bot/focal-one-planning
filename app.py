@@ -227,7 +227,7 @@ with tabs[1]:
 
     st.subheader("Historique des interventions")
     terminees = sorted(
-        [e for e in st.session_state.data["equipements"] if e.get("statut"] == "Terminé"],
+        [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"],
         key=lambda x: str(x.get("id", ""))
     )
     
