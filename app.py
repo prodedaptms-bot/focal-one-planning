@@ -248,6 +248,9 @@ if st.button("Générer le Gantt pro (.html)"):
             )
             
             # Paramétrage strict de l'axe Y (ordre des machines) et de l'axe X (type date forcé)
+            date_aujourdhui_str = datetime.date.today().strftime('%Y-%m-%d')
+
+            # Paramétrage strict de l'axe Y et de l'axe X (commençant aujourd'hui)
             fig.update_layout(
                 yaxis=dict(
                     categoryorder="array",
@@ -256,7 +259,8 @@ if st.button("Générer le Gantt pro (.html)"):
                 ),
                 xaxis=dict(
                     title="Chronologie",
-                    type="date" # Force le moteur de Plotly à interpréter les chaînes en calendrier réel 2026
+                    range=[date_aujourdhui_str, None], # Commence strictement aujourd'hui, s'adapte à la fin max
+                    type="date"
                 ),
                 plot_bgcolor="#f8f9fa",
                 paper_bgcolor="#ffffff",
