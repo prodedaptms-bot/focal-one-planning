@@ -17,7 +17,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-BASE_DIR = r"C:\Planning"
+import os
+
+# Détecte automatiquement le dossier du projet, que ce soit sur ton PC ou sur Streamlit Cloud
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "donnees_atelier.json")
 
 def load_data():
@@ -45,8 +48,9 @@ if "data" not in st.session_state: st.session_state.data = load_data()
 try:
     bandeau = Image.open(os.path.join(BASE_DIR, 'fond_bandeau.jpg'))
     st.image(bandeau, use_container_width=True)
-except:
-    st.warning("Image de bandeau non trouvée dans C:\Planning")
+except Exception as e:
+    # C'est ici que ton message d'erreur s'affiche !
+    st.warning(f"Image de bandeau non trouvée dans {BASE_DIR}")
 
 st.title("Focal One Planner")
 
