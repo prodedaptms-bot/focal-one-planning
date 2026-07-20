@@ -275,6 +275,7 @@ with tabs[1]:
             st.write(f"✅ **{e['id']}** | Fin réelle : {date_fin_affiche}")
 
 # 2. PLANNING (Gestion & Modification)
+
 with tabs[2]:
     st.subheader("Planification et Suivi")
     
@@ -334,7 +335,7 @@ with tabs[2]:
                 "statut": "Actif",
                 "debut": str(d_reelle),
                 "fin_prevue": str(d_fin),
-                "duree_jours": int(duree)  # On mémorise la vraie durée en jours ouvrés
+                "duree_jours": int(duree)
             })
             save_data()
             st.success(f"Planifié : {d_reelle} au {d_fin}")
@@ -359,11 +360,10 @@ with tabs[2]:
             machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
             machine_concernee["commentaire_retard"] = commentaire
             
-            # Recalcul de la durée si la fin change manuellement
             d_deb = datetime.datetime.strptime(machine_concernee["debut"], '%Y-%m-%d').date()
             d_fin = nouvelle_fin
             temp_d = d_deb
-             nouvelle_duree = 0
+            nouvelle_duree = 0
             while temp_d <= d_fin:
                 if temp_d.weekday() < 5:
                     nouvelle_duree += 1
@@ -396,9 +396,7 @@ with tabs[2]:
             
             derniere_fin_connue = None
             for i, machine in enumerate(machines_tech):
-                # On récupère la vraie durée initiale stockée (ou on l'estime proprement par défaut à 5)
                 duree_ouvree = machine.get("duree_jours", 5)
-                
                 d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
                 
                 if i == 0:
@@ -465,6 +463,7 @@ with tabs[2]:
                 del st.session_state.data["equipements"][i]
                 save_data()
                 st.rerun()
+
 # 3. CONGÉS
 with tabs[3]:
     st.subheader("Gestion des absences")
