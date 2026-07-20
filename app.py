@@ -282,7 +282,6 @@ with tabs[2]:
     def calculer_fin_avec_contraintes(date_debut_cal, duree_jours, tech_cible, equipements_actuels, absences_actuelles, ignore_eq_id=None):
         current_date = date_debut_cal
         
-        # Ajuster le début si indisponible (weekend ou congé)
         def est_disponible(d_test):
             if d_test.weekday() >= 5: return False
             for abs_item in absences_actuelles:
@@ -327,14 +326,15 @@ with tabs[2]:
             absences = st.session_state.data.get("absences", [])
             equipements = st.session_state.data.get("equipements", [])
             
-            d_reelle, d_fin = calculer_fin_avec_contraintes(date_debut, duree, tech, equipements, absences)
+            d_reelle, d_fin = calculer_fin_avec_contraintes(date_debut, int(duree), tech, equipements, absences)
             
             st.session_state.data["equipements"].append({
                 "id": nom, 
                 "tech": tech, 
                 "statut": "Actif",
                 "debut": str(d_reelle),
-                "fin_prevue": str(d_fin)
+                "fin_prevue": str(d_fin),
+                "duree_jours": int(duree)  # On mémorise la vraie durée en jours ouvrés
             })
             save_data()
             st.success(f"Planifié : {d_reelle} au {d_fin}")
@@ -358,6 +358,17 @@ with tabs[2]:
             machine_concernee["statut"] = nouveau_statut
             machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
             machine_concernee["commentaire_retard"] = commentaire
+            
+            # Recalcul de la durée si la fin change manuellement
+            d_deb = datetime.datetime.strptime(machine_concernee["debut"], '%Y-%m-%d').date()
+            d_fin = nouvelle_fin
+            temp_d = d_deb
+             nouvelle_duree = 0
+            while temp_d <= d_fin:
+                if temp_d.weekday() < 5:
+                    nouvelle_duree += 1
+                temp_d += datetime.timedelta(days=1)
+            machine_concernee["duree_jours"] = max(1, nouvelle_duree)
             
             save_data()
             st.success(f"La machine {machine_id} a été mise à jour avec succès !")
@@ -385,17 +396,10 @@ with tabs[2]:
             
             derniere_fin_connue = None
             for i, machine in enumerate(machines_tech):
-                d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
-                d_fin_orig = datetime.datetime.strptime(machine["fin_prevue"], '%Y-%m-%d').date()
+                # On récupère la vraie durée initiale stockée (ou on l'estime proprement par défaut à 5)
+                duree_ouvree = machine.get("duree_jours", 5)
                 
-                # Calculer le nombre exact de jours ouvrés de la tâche d'origine (hors week-ends)
-                temp_d = d_deb_orig
-                duree_ouvree = 0
-                while temp_d <= d_fin_orig:
-                    if temp_d.weekday() < 5:
-                        duree_ouvree += 1
-                    temp_d += datetime.timedelta(days=1)
-                duree_ouvree = max(1, duree_ouvree)
+                d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
                 
                 if i == 0:
                     nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(d_deb_orig, duree_ouvree, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
@@ -412,7 +416,7 @@ with tabs[2]:
             
             save_data()
             if modifications_faites > 0:
-                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) proprement en tenant compte des contraintes.")
+                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) proprement.")
                 st.rerun()
             else:
                 st.info("Le planning est déjà parfaitement aligné.")
@@ -461,7 +465,6 @@ with tabs[2]:
                 del st.session_state.data["equipements"][i]
                 save_data()
                 st.rerun()
-
 # 3. CONGÉS
 with tabs[3]:
     st.subheader("Gestion des absences")
