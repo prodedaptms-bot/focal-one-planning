@@ -383,20 +383,25 @@ with tabs[2]:
             equipements = st.session_state.data.get("equipements", [])
             modifications_faites = 0
             
-            # Repartir de la date de fin de la première machine, ou recalculer en chaîne
             derniere_fin_connue = None
             for i, machine in enumerate(machines_tech):
                 d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
                 d_fin_orig = datetime.datetime.strptime(machine["fin_prevue"], '%Y-%m-%d').date()
-                duree_machine = max(1, (d_fin_orig - d_deb_orig).days) # approximation de durée ou calcul net
+                
+                # Calculer le nombre exact de jours ouvrés de la tâche d'origine (hors week-ends)
+                temp_d = d_deb_orig
+                duree_ouvree = 0
+                while temp_d <= d_fin_orig:
+                    if temp_d.weekday() < 5:
+                        duree_ouvree += 1
+                    temp_d += datetime.timedelta(days=1)
+                duree_ouvree = max(1, duree_ouvree)
                 
                 if i == 0:
-                    # La première machine garde son début, mais on s'assure qu'elle intègre sa fin avec les contraintes
-                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(d_deb_orig, duree_machine, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
+                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(d_deb_orig, duree_ouvree, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
                 else:
-                    # Pour les suivantes, elles doivent commencer après la fin de la précédente
                     prochain_jour_possible = derniere_fin_connue + datetime.timedelta(days=1)
-                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(prochain_jour_possible, duree_machine, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
+                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(prochain_jour_possible, duree_ouvree, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
                 
                 if machine["debut"] != str(nouveau_deb) or machine["fin_prevue"] != str(nouvelle_fin):
                     machine["debut"] = str(nouveau_deb)
@@ -407,10 +412,10 @@ with tabs[2]:
             
             save_data()
             if modifications_faites > 0:
-                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) en tenant compte des congés.")
+                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) proprement en tenant compte des contraintes.")
                 st.rerun()
             else:
-                st.info("Le planning est déjà parfaitement aligné avec les contraintes.")
+                st.info("Le planning est déjà parfaitement aligné.")
         else:
             st.info("Pas assez de machines en cours pour ce technicien pour faire une cascade.")
     st.divider()
