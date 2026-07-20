@@ -56,6 +56,43 @@ st.title("Focal One Planner")
 
 tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
 
+# --- EXEMPLE D'EMPLACEMENT DANS TON FICHIER app.py ---
+
+# 1. Place la fonction utilitaire ici (par exemple après load_data())
+def calculer_date_fin_avec_conges(date_debut_str, duree_jours, technicien, data):
+    current_date = datetime.datetime.strptime(date_debut_str, "%Y-%m-%d").date()
+    jours_poses = 0
+    
+    # Récupère les congés du technicien concerné
+    conges_tech = [
+        c for c in data.get("absences", []) 
+        if c["technicien"] == technicien
+    ]
+    
+    while jours_poses < duree_jours:
+        is_weekend = current_date.weekday() >= 5
+        
+        is_conge = False
+        for conge in conges_tech:
+            d_debut = datetime.datetime.strptime(conge["debut"], "%Y-%m-%d").date()
+            d_fin = datetime.datetime.strptime(conge["fin"], "%Y-%m-%d").date()
+            if d_debut <= current_date <= d_fin:
+                is_conge = True
+                break
+                
+        if not is_weekend and not is_conge:
+            jours_poses += 1
+            
+        if jours_poses < duree_jours:
+            current_date += datetime.timedelta(days=1)
+            
+    return current_date.strftime("%Y-%m-%d")
+
+
+# 2. Utilise-la dans ton formulaire d'ajout ou dans ta fonction de cascade :
+# Par exemple, lorsque tu recalculeras les dates pour un technicien :
+# date_fin_calculee = calculer_date_fin_avec_conges(date_debut_machine, duree_machine, tech, st.session_state.data)
+
 # 0. DASHBOARD
 with tabs[0]:
     st.subheader("Vue d'ensemble - Temps Réel")
