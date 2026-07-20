@@ -321,7 +321,7 @@ with tabs[2]:
         nom = c1.text_input("Nom de la machine")
         tech = c2.selectbox("Technicien", st.session_state.data["techniciens"])
         date_debut = c3.date_input("Date de début")
-        duree = c3.number_input("Durée prévue (jours)", min_value=1, value=5)
+        duree = c3.number_input("Durée prévue (jours)", min_value=1, value=14)
         
         if st.form_submit_button("Ajouter à la production"):
             absences = st.session_state.data.get("absences", [])
@@ -396,7 +396,7 @@ with tabs[2]:
             
             derniere_fin_connue = None
             for i, machine in enumerate(machines_tech):
-                duree_ouvree = machine.get("duree_jours", 5)
+                duree_ouvree = machine.get("duree_jours", 14)
                 d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
                 
                 if i == 0:
