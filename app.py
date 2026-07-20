@@ -195,6 +195,64 @@ with tabs[0]:
     else:
         st.write("Aucune machine en cours de production.")
 
+import plotly.express as px
+import pandas as pd
+import datetime
+
+# --- À placer dans un onglet ou un expander ---
+st.subheader("📊 Export Graphique de Gantt")
+
+if st.button("Générer le Gantt interactif (HTML)"):
+    equipements = st.session_state.data.get("equipements", [])
+    
+    if equipements:
+        # Préparation des données pour Plotly
+        df_gantt = []
+        for e in equipements:
+            if e.get("statut") in ["Actif", "Bloqué", "Terminé"]:
+                df_gantt.append(dict(
+                    Task=e.get("id"),
+                    Start=e.get("debut"),
+                    Finish=e.get("fin_prevue"),
+                    Resource=e.get("tech", "Non assigné"),
+                    Statut=e.get("statut")
+                ))
+        
+        if df_gantt:
+            df_plot = pd.DataFrame(df_gantt)
+            
+            # Création du Gantt avec Plotly Express
+            fig = px.timeline(
+                df_plot, 
+                x_start="Start", 
+                x_end="Finish", 
+                y="Task", 
+                color="Resource",
+                hover_data=["Statut"],
+                title="Planning de production - Diagramme de Gantt"
+            )
+            fig.update_yaxes(autorange="reversed") # Pour avoir la première machine en haut
+            
+            # Sauvegarde en fichier HTML temporaire
+            html_file = "planning_gantt.html"
+            fig.write_html(html_file)
+            
+            # Bouton de téléchargement pour l'utilisateur
+            with open(html_file, "r", encoding="utf-8") as f:
+                html_data = f.read()
+                
+            st.download_button(
+                label="📥 Télécharger le Gantt interactif (.html)",
+                data=html_data,
+                file_name=f"gantt_atelier_{datetime.date.today()}.html",
+                mime="text/html"
+            )
+            st.success("Gantt généré avec succès ! Cliquez ci-dessus pour le télécharger et l'ouvrir.")
+        else:
+            st.warning("Pas assez de données pour générer le diagramme.")
+    else:
+        st.info("Aucune machine enregistrée.")
+
 # 1. HISTORIQUE
 with tabs[1]:
     st.subheader("⚠️ Administration")
