@@ -211,8 +211,8 @@ if st.button("Générer le Gantt pro (.html)"):
             if e.get("statut") in ["Actif", "Bloqué", "Terminé"]:
                 df_gantt.append(dict(
                     Machine=e.get("id"),
-                    Debut=e.get("debut"),
-                    Fin=e.get("fin_prevue"),
+                    Debut=pd.to_datetime(e.get("debut")),
+                    Fin=pd.to_datetime(e.get("fin_prevue")),
                     Technicien=e.get("tech", "Non assigné"),
                     Statut=e.get("statut")
                 ))
@@ -220,13 +220,13 @@ if st.button("Générer le Gantt pro (.html)"):
         if df_gantt:
             df_plot = pd.DataFrame(df_gantt)
             
-            # Palette dynamique basée sur vos techniciens enregistrés pour forcer les couleurs
+            # Palette dynamique basée sur vos techniciens enregistrés
             liste_techs = st.session_state.data.get("techniciens", ["Thomas", "Lucas"])
             couleurs_palette = ["#2b5c8f", "#e67e22", "#27ae60", "#8e44ad", "#e74c3c", "#34495e"]
             color_map = {tech: couleurs_palette[i % len(couleurs_palette)] for i, tech in enumerate(liste_techs)}
             color_map["Non assigné"] = "#95a5a6"
             
-            # Création du diagramme
+            # Création du diagramme avec des objets datetime
             fig = px.timeline(
                 df_plot, 
                 x_start="Debut", 
@@ -238,15 +238,15 @@ if st.button("Générer le Gantt pro (.html)"):
                 title="Planning de Production - Atelier Focal One"
             )
             
-            # Forcer le début de l'axe X à la date d'aujourd'hui (extraction)
-            date_aujourdhui_str = datetime.date.today().strftime('%Y-%m-%d')
+            # Forcer strictement le début de l'axe X à aujourd'hui
+            date_aujourdhui = pd.to_datetime(datetime.date.today())
             
             # Amélioration du design global et du cadrage des dates
             fig.update_yaxes(autorange="reversed") # Première machine en haut
             fig.update_layout(
                 xaxis=dict(
                     title="Chronologie",
-                    range=[date_aujourdhui_str, None], # Commence aujourd'hui, s'adapte à la fin max
+                    range=[date_aujourdhui, None], # Commence aujourd'hui, s'adapte dynamiquement à la fin max
                     type="date"
                 ),
                 yaxis_title="Équipements",
@@ -295,11 +295,11 @@ if st.button("Générer le Gantt pro (.html)"):
                 file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
                 mime="text/html"
             )
-            st.success("Gantt pro généré avec succès (cadré à partir d'aujourd'hui avec les bonnes couleurs) !")
+            st.success("Gantt pro généré avec succès ! Le calendrier est désormais bien calé sur la date du jour.")
         else:
             st.warning("Pas assez de données pour générer le diagramme.")
     else:
-        st.info("Aucune machine enregistrée.")
+        st.info("Aucune machine enregistrée."))
 # 1. HISTORIQUE
 with tabs[1]:
     st.subheader("⚠️ Administration")
