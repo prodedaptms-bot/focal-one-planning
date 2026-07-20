@@ -4,7 +4,6 @@ import json, os
 import pandas as pd
 import datetime
 from PIL import Image
-import gspread
 import shutil
 
 # --- CONFIGURATION INITIALE ---
@@ -16,8 +15,6 @@ st.markdown("""
         .block-container { padding-top: 1rem; }
     </style>
 """, unsafe_allow_html=True)
-
-import os
 
 # Détecte automatiquement le dossier du projet, que ce soit sur ton PC ou sur Streamlit Cloud
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -49,49 +46,11 @@ try:
     bandeau = Image.open(os.path.join(BASE_DIR, 'fond_bandeau.jpg'))
     st.image(bandeau, use_container_width=True)
 except Exception as e:
-    # C'est ici que ton message d'erreur s'affiche !
     st.warning(f"Image de bandeau non trouvée dans {BASE_DIR}")
 
 st.title("Focal One Planner")
 
 tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
-
-# --- EXEMPLE D'EMPLACEMENT DANS TON FICHIER app.py ---
-
-# 1. Place la fonction utilitaire ici (par exemple après load_data())
-def calculer__avec_conges(date_debut_str, duree_jours, technicien, data):
-    current_date = datetime.datetime.strptime(date_debut_str, "%Y-%m-%d").date()
-    jours_poses = 0
-    
-    # Récupère les congés du technicien concerné
-    conges_tech = [
-        c for c in data.get("absences", []) 
-        if c["technicien"] == technicien
-    ]
-    
-    while jours_poses < duree_jours:
-        is_weekend = current_date.weekday() >= 5
-        
-        is_conge = False
-        for conge in conges_tech:
-            d_debut = datetime.datetime.strptime(conge["debut"], "%Y-%m-%d").date()
-            d_fin = datetime.datetime.strptime(conge["fin"], "%Y-%m-%d").date()
-            if d_debut <= current_date <= d_fin:
-                is_conge = True
-                break
-                
-        if not is_weekend and not is_conge:
-            jours_poses += 1
-            
-        if jours_poses < duree_jours:
-            current_date += datetime.timedelta(days=1)
-            
-    return current_date.strftime("%Y-%m-%d")
-
-
-# 2. Utilise-la dans ton formulaire d'ajout ou dans ta fonction de cascade :
-# Par exemple, lorsque tu recalculeras les dates pour un technicien :
-# date_fin_calculee = calculer_date_fin_avec_conges(date_debut_machine, duree_machine, tech, st.session_state.data)
 
 # 0. DASHBOARD
 with tabs[0]:
@@ -137,17 +96,18 @@ with tabs[0]:
     c1.metric("En cours", len(en_cours))
     c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
     c3.metric("⚠️ En retard", len([e for e in en_cours if pd.to_datetime(e.get("fin_prevue")).date() < aujourdhui]))
-    c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
+    c4.metric("Terminées", len([e for e in equipements if e.get("statut"] == "Terminé"]))
     
     st.divider()
 
     # ---------------------------------------------------------
-    # 3. SUIVI VISUEL DES MACHINES
+    # 3. SUIVI VISUEL DES MACHINES (Triées chronologiquement par ID)
     # ---------------------------------------------------------
     st.write("### 📅 Suivi Visuel des Machines")
     
     if en_cours:
-        for e in en_cours:
+        en_cours_tries = sorted(en_cours, key=lambda x: str(x.get("id", "")))
+        for e in en_cours_tries:
             debut = pd.to_datetime(e["debut"])
             fin = pd.to_datetime(e["fin_prevue"])
             duree_totale = (fin - debut).total_seconds()
@@ -193,27 +153,30 @@ with tabs[0]:
         st.info("Aucune intervention en cours.")
 
     # ---------------------------------------------------------
-    # 4. TABLEAU RÉCAPITULATIF
+    # 4. TABLEAU RÉCAPITULATIF (Trié chronologiquement par ID)
     # ---------------------------------------------------------
     st.subheader("Détail du Planning")
     
-    data_to_display = []
+    equipements_actifs_tries = sorted(
+        [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
+        key=lambda x: str(x.get("id", ""))
+    )
     
-    for e in st.session_state.data["equipements"]:
-        if e.get("statut") in ["Actif", "Bloqué"]:
-            date_fin = datetime.datetime.strptime(e.get("fin_prevue"), '%Y-%m-%d').date()
-            delta = (date_fin - aujourdhui).days
-            jours_restants = max(0, delta)
-            
-            data_to_display.append({
-                "Machine": e.get("id"),
-                "Statut": e.get("statut"),
-                "Technicien": e.get("tech"),
-                "Début": e.get("debut"),
-                "Fin prévue": e.get("fin_prevue"),
-                "Jours restants": jours_restants,
-                "Info Arrêt/Retard": e.get("cause_arret") or e.get("commentaire_retard") or "-"
-            })
+    data_to_display = []
+    for e in equipements_actifs_tries:
+        date_fin = datetime.datetime.strptime(e.get("fin_prevue"), '%Y-%m-%d').date()
+        delta = (date_fin - aujourdhui).days
+        jours_restants = max(0, delta)
+        
+        data_to_display.append({
+            "Machine": e.get("id"),
+            "Statut": e.get("statut"),
+            "Technicien": e.get("tech"),
+            "Début": e.get("debut"),
+            "Fin prévue": e.get("fin_prevue"),
+            "Jours restants": jours_restants,
+            "Info Arrêt/Retard": e.get("cause_arret") or e.get("commentaire_retard") or "-"
+        })
     
     if data_to_display:
         df = pd.DataFrame(data_to_display)
@@ -232,7 +195,6 @@ with tabs[0]:
     else:
         st.write("Aucune machine en cours de production.")
 
-        
 # 1. HISTORIQUE
 with tabs[1]:
     st.subheader("⚠️ Administration")
@@ -242,14 +204,13 @@ with tabs[1]:
         
         if st.button("Remise à zéro avec sauvegarde"):
             if mdp == "TonMotDePasse":
-                data_dir = "C:/Planning"
-                archive_dir = os.path.join(data_dir, "Archives")
+                archive_dir = os.path.join(BASE_DIR, "Archives")
                 if not os.path.exists(archive_dir):
                     os.makedirs(archive_dir)
                 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_path = os.path.join(archive_dir, f"backup_{timestamp}.json")
-                shutil.copy(os.path.join(data_dir, "donnees_atelier.json"), backup_path)
+                shutil.copy(DATA_FILE, backup_path)
                 
                 st.session_state.data = {
                     "techniciens": ["Thomas", "Lucas"], 
@@ -265,7 +226,10 @@ with tabs[1]:
     st.divider()
 
     st.subheader("Historique des interventions")
-    terminees = [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"]
+    terminees = sorted(
+        [e for e in st.session_state.data["equipements"] if e.get("statut"] == "Terminé"],
+        key=lambda x: str(x.get("id", ""))
+    )
     
     if not terminees:
         st.info("Aucune intervention terminée.")
@@ -275,7 +239,6 @@ with tabs[1]:
             st.write(f"✅ **{e['id']}** | Fin réelle : {date_fin_affiche}")
 
 # 2. PLANNING (Gestion & Modification)
-
 with tabs[2]:
     st.subheader("Planification et Suivi")
     
@@ -343,7 +306,11 @@ with tabs[2]:
 
     st.subheader("Modifier / Ajuster une machine")
 
-    machine_id = st.selectbox("Choisir une machine", [e['id'] for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]])
+    machines_actives_tries = sorted(
+        [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
+        key=lambda x: str(x.get("id", ""))
+    )
+    machine_id = st.selectbox("Choisir une machine", [e['id'] for e in machines_actives_tries])
 
     machine_concernee = next((e for e in st.session_state.data["equipements"] if e['id'] == machine_id), None)
 
@@ -422,7 +389,13 @@ with tabs[2]:
             st.info("Pas assez de machines en cours pour ce technicien pour faire une cascade.")
     st.divider()
     
-    for i, e in enumerate(st.session_state.data["equipements"]):
+    # Affichage des machines actives/bloquées triées chronologiquement par ID
+    equipements_tries = sorted(
+        enumerate(st.session_state.data["equipements"]), 
+        key=lambda x: str(x[1].get("id", ""))
+    )
+
+    for i, e in equipements_tries:
         if e.get("statut") in ["Actif", "Bloqué"]:
             m_id = e.get("id", "sans_nom")
             unique_key = f"{m_id}_{i}"
