@@ -206,7 +206,7 @@ if st.button("Générer le Gantt pro (.html)"):
     equipements = st.session_state.data.get("equipements", [])
     
     if equipements:
-        # Tri préalable des équipements par ID (ordre chronologique/alphabétique souhaité)
+        # Tri préalable des équipements par ID (ordre chronologique/alphabétique)
         equipements_tries = sorted(
             [e for e in equipements if e.get("statut") in ["Actif", "Bloqué", "Terminé"]],
             key=lambda x: str(x.get("id", ""))
@@ -216,11 +216,11 @@ if st.button("Générer le Gantt pro (.html)"):
         for e in equipements_tries:
             df_gantt.append(dict(
                 Machine=str(e.get("id")),
-                # Conversion explicite en objet datetime pour que Plotly lise la bonne année
-                Debut=pd.to_datetime(e.get("debut")),
-                Fin=pd.to_datetime(e.get("fin_prevue")),
-                Technicien=e.get("tech", "Non assigné"),
-                Statut=e.get("statut")
+                # Utilisation directe du format texte chaîne de caractères YYYY-MM-DD
+                Debut=str(e.get("debut")),
+                Fin=str(e.get("fin_prevue")),
+                Technicien=str(e.get("tech", "Non assigné")),
+                Statut=str(e.get("statut"))
             ))
         
         if df_gantt:
@@ -235,7 +235,7 @@ if st.button("Générer le Gantt pro (.html)"):
             color_map = {tech: couleurs_palette[i % len(couleurs_palette)] for i, tech in enumerate(liste_techs)}
             color_map["Non assigné"] = "#95a5a6"
             
-            # Création du diagramme
+            # Création du diagramme de Gantt
             fig = px.timeline(
                 df_plot, 
                 x_start="Debut", 
@@ -247,20 +247,16 @@ if st.button("Générer le Gantt pro (.html)"):
                 title="Planning de Production - Atelier Focal One"
             )
             
-            # Date du jour au format datetime pour le cadrage de l'axe X
-            date_aujourdhui = pd.to_datetime(datetime.date.today())
-            
-            # Paramétrage strict des axes (Y figé dans l'ordre des machines, X calé à partir d'aujourd'hui)
+            # Paramétrage strict de l'axe Y (ordre des machines) et de l'axe X (type date forcé)
             fig.update_layout(
                 yaxis=dict(
                     categoryorder="array",
-                    categoryarray=liste_machines_ordonnees, # Force l'ordre exact des machines
+                    categoryarray=liste_machines_ordonnees, 
                     autorange="reversed" # Première machine en haut
                 ),
                 xaxis=dict(
                     title="Chronologie",
-                    range=[date_aujourdhui, None], # Commence aujourd'hui
-                    type="date"
+                    type="date" # Force le moteur de Plotly à interpréter les chaînes en calendrier réel 2026
                 ),
                 plot_bgcolor="#f8f9fa",
                 paper_bgcolor="#ffffff",
@@ -307,7 +303,7 @@ if st.button("Générer le Gantt pro (.html)"):
                 file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
                 mime="text/html"
             )
-            st.success("Gantt pro généré avec succès ! Les années sont correctes et les machines suivent l'ordre chronologique.")
+            st.success("Gantt pro généré avec succès ! Les bonnes dates s'affichent désormais correctement.")
         else:
             st.warning("Pas assez de données pour générer le diagramme.")
     else:
