@@ -216,9 +216,9 @@ if st.button("Générer le Gantt pro (.html)"):
         for e in equipements_tries:
             df_gantt.append(dict(
                 Machine=str(e.get("id")),
-                # Utilisation directe du format texte chaîne de caractères YYYY-MM-DD
-                Debut=str(e.get("debut")),
-                Fin=str(e.get("fin_prevue")),
+                # Conversion propre en datetime pour que Plotly comprenne l'année 2026
+                Debut=pd.to_datetime(e.get("debut")),
+                Fin=pd.to_datetime(e.get("fin_prevue")),
                 Technicien=str(e.get("tech", "Non assigné")),
                 Statut=str(e.get("statut"))
             ))
@@ -247,10 +247,10 @@ if st.button("Générer le Gantt pro (.html)"):
                 title="Planning de Production - Atelier Focal One"
             )
             
-            # Paramétrage strict de l'axe Y (ordre des machines) et de l'axe X (type date forcé)
-            date_aujourdhui_str = datetime.date.today().strftime('%Y-%m-%d')
-
-            # Paramétrage strict de l'axe Y et de l'axe X (commençant aujourd'hui)
+            # Date du jour au format Timestamp pandas pour un rendu propre sans bug de l'an 2000
+            date_aujourdhui_ts = pd.Timestamp(datetime.date.today())
+            
+            # Paramétrage strict de l'axe Y et de l'axe X avec le Timestamp
             fig.update_layout(
                 yaxis=dict(
                     categoryorder="array",
@@ -259,7 +259,7 @@ if st.button("Générer le Gantt pro (.html)"):
                 ),
                 xaxis=dict(
                     title="Chronologie",
-                    range=[date_aujourdhui_str, None], # Commence strictement aujourd'hui, s'adapte à la fin max
+                    range=[date_aujourdhui_ts, None], # Commence aujourd'hui avec le bon format
                     type="date"
                 ),
                 plot_bgcolor="#f8f9fa",
@@ -307,7 +307,7 @@ if st.button("Générer le Gantt pro (.html)"):
                 file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
                 mime="text/html"
             )
-            st.success("Gantt pro généré avec succès ! Les bonnes dates s'affichent désormais correctement.")
+            st.success("Gantt pro généré avec succès ! Le calendrier démarre bien à aujourd'hui en 2026.")
         else:
             st.warning("Pas assez de données pour générer le diagramme.")
     else:
