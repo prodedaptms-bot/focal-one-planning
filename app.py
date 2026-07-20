@@ -299,7 +299,8 @@ if st.button("Générer le Gantt pro (.html)"):
         else:
             st.warning("Pas assez de données pour générer le diagramme.")
     else:
-        st.info("Aucune machine enregistrée."))
+        st.info("Aucune machine enregistrée.")
+        
 # 1. HISTORIQUE
 with tabs[1]:
     st.subheader("⚠️ Administration")
