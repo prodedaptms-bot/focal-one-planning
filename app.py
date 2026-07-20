@@ -198,56 +198,97 @@ with tabs[0]:
 import plotly.express as px
 import pandas as pd
 import datetime
+import base64
 
-# --- À placer dans un onglet ou un expander ---
-st.subheader("📊 Export Graphique de Gantt")
+st.subheader("📊 Export Graphique de Gantt Personnalisé")
 
-if st.button("Générer le Gantt interactif (HTML)"):
+if st.button("Générer le Gantt pro (.html)"):
     equipements = st.session_state.data.get("equipements", [])
     
     if equipements:
-        # Préparation des données pour Plotly
         df_gantt = []
         for e in equipements:
             if e.get("statut") in ["Actif", "Bloqué", "Terminé"]:
                 df_gantt.append(dict(
-                    Task=e.get("id"),
-                    Start=e.get("debut"),
-                    Finish=e.get("fin_prevue"),
-                    Resource=e.get("tech", "Non assigné"),
+                    Machine=e.get("id"),
+                    Debut=e.get("debut"),
+                    Fin=e.get("fin_prevue"),
+                    Technicien=e.get("tech", "Non assigné"),
                     Statut=e.get("statut")
                 ))
         
         if df_gantt:
             df_plot = pd.DataFrame(df_gantt)
             
-            # Création du Gantt avec Plotly Express
+            # Palette de couleurs pro (tu peux l'ajuster ou utiliser une palette Plotly)
+            color_map = {
+                "Thomas": "#2b5c8f",
+                "Lucas": "#e67e22",
+                "Non assigné": "#95a5a6"
+            }
+            
+            # Création du diagramme avec coloration par Technicien
             fig = px.timeline(
                 df_plot, 
-                x_start="Start", 
-                x_end="Finish", 
-                y="Task", 
-                color="Resource",
+                x_start="Debut", 
+                x_end="Fin", 
+                y="Machine", 
+                color="Technicien",
+                color_discrete_map=color_map,
                 hover_data=["Statut"],
-                title="Planning de production - Diagramme de Gantt"
+                title="Planning de Production - Atelier Focal One"
             )
-            fig.update_yaxes(autorange="reversed") # Pour avoir la première machine en haut
             
-            # Sauvegarde en fichier HTML temporaire
-            html_file = "planning_gantt.html"
-            fig.write_html(html_file)
+            # Amélioration du design global du graphique
+            fig.update_yaxes(autorange="reversed") # Première machine en haut
+            fig.update_layout(
+                xaxis_title="Chronologie",
+                yaxis_title="Équipements",
+                plot_bgcolor="#f8f9fa",
+                paper_bgcolor="#ffffff",
+                font=dict(family="Arial, sans-serif", size=12),
+                title_font=dict(size=18, color="#2c3e50")
+            )
             
-            # Bouton de téléchargement pour l'utilisateur
-            with open(html_file, "r", encoding="utf-8") as f:
-                html_data = f.read()
-                
+            # Conversion de ton bandeau image en Base64 pour l'intégrer proprement dans le HTML
+            bandeau_html = ""
+            bandeau_path = os.path.join(BASE_DIR, 'fond_bandeau.jpg')
+            if os.path.exists(bandeau_path):
+                with open(bandeau_path, "rb") as img_file:
+                    encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
+                    bandeau_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/jpeg;base64,{encoded_img}" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;"></div>'
+
+            # Génération du code HTML final incluant le bandeau et le graphique
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Planning de Production - Focal One</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f9; color: #333; }}
+                    .container {{ max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
+                    h1 {{ color: #2c3e50; text-align: center; margin-bottom: 25px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    {bandeau_html}
+                    <h1>Planning de Production - Vue Gantt</h1>
+                    {fig.to_html(full_html=False, include_plotlyjs='cdn')}
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Bouton de téléchargement
             st.download_button(
-                label="📥 Télécharger le Gantt interactif (.html)",
-                data=html_data,
-                file_name=f"gantt_atelier_{datetime.date.today()}.html",
+                label="📥 Télécharger le Gantt pro (.html)",
+                data=html_content,
+                file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
                 mime="text/html"
             )
-            st.success("Gantt généré avec succès ! Cliquez ci-dessus pour le télécharger et l'ouvrir.")
+            st.success("Gantt pro généré avec succès avec votre bandeau et les couleurs par technicien !")
         else:
             st.warning("Pas assez de données pour générer le diagramme.")
     else:
