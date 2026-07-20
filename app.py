@@ -59,7 +59,7 @@ tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "An
 # --- EXEMPLE D'EMPLACEMENT DANS TON FICHIER app.py ---
 
 # 1. Place la fonction utilitaire ici (par exemple après load_data())
-def calculer_date_fin_avec_conges(date_debut_str, duree_jours, technicien, data):
+def calculer__avec_conges(date_debut_str, duree_jours, technicien, data):
     current_date = datetime.datetime.strptime(date_debut_str, "%Y-%m-%d").date()
     jours_poses = 0
     
@@ -278,6 +278,44 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Planification et Suivi")
     
+    # Fonction utilitaire locale pour calculer une date en sautant weekends et congés
+    def calculer_fin_avec_contraintes(date_debut_cal, duree_jours, tech_cible, equipements_actuels, absences_actuelles, ignore_eq_id=None):
+        current_date = date_debut_cal
+        
+        # Ajuster le début si indisponible (weekend ou congé)
+        def est_disponible(d_test):
+            if d_test.weekday() >= 5: return False
+            for abs_item in absences_actuelles:
+                if abs_item["tech"] == tech_cible:
+                    d_deb_abs = datetime.datetime.strptime(abs_item["debut"], '%Y-%m-%d').date()
+                    d_fin_abs = datetime.datetime.strptime(abs_item["fin"], '%Y-%m-%d').date()
+                    if d_deb_abs <= d_test <= d_fin_abs:
+                        return False
+            for e_item in equipements_actuels:
+                if e_item.get("tech") == tech_cible and e_item.get("statut") in ["Actif", "Bloqué"]:
+                    if ignore_eq_id and e_item.get("id") == ignore_eq_id:
+                        continue
+                    d_deb_eq = datetime.datetime.strptime(e_item["debut"], '%Y-%m-%d').date()
+                    d_fin_eq = datetime.datetime.strptime(e_item["fin_prevue"], '%Y-%m-%d').date()
+                    if d_deb_eq <= d_test <= d_fin_eq:
+                        return False
+            return True
+
+        while not est_disponible(current_date):
+            current_date += datetime.timedelta(days=1)
+            
+        date_reelle_debut = current_date
+        jours_restants = int(duree_jours)
+        date_actuelle = date_reelle_debut
+        
+        while jours_restants > 0:
+            if est_disponible(date_actuelle):
+                jours_restants -= 1
+            if jours_restants > 0:
+                date_actuelle += datetime.timedelta(days=1)
+                
+        return date_reelle_debut, date_actuelle
+
     with st.form("ajout_machine", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         nom = c1.text_input("Nom de la machine")
@@ -289,40 +327,17 @@ with tabs[2]:
             absences = st.session_state.data.get("absences", [])
             equipements = st.session_state.data.get("equipements", [])
             
-            def est_disponible(date_test, tech_cible):
-                if date_test.weekday() >= 5: return False
-                for abs in absences:
-                    if abs["tech"] == tech_cible:
-                        if datetime.datetime.strptime(abs["debut"], '%Y-%m-%d').date() <= date_test <= datetime.datetime.strptime(abs["fin"], '%Y-%m-%d').date():
-                            return False
-                for e in equipements:
-                    if e.get("tech") == tech_cible and e.get("statut") == "Actif":
-                        d_debut = datetime.datetime.strptime(e["debut"], '%Y-%m-%d').date()
-                        d_fin = datetime.datetime.strptime(e["fin_prevue"], '%Y-%m-%d').date()
-                        if d_debut <= date_test <= d_fin: return False
-                return True
-
-            date_reelle_debut = date_debut
-            while not est_disponible(date_reelle_debut, tech):
-                date_reelle_debut += datetime.timedelta(days=1)
-
-            date_actuelle = date_reelle_debut
-            jours_restants = int(duree)
-            while jours_restants > 0:
-                if est_disponible(date_actuelle, tech):
-                    jours_restants -= 1
-                if jours_restants > 0:
-                    date_actuelle += datetime.timedelta(days=1)
+            d_reelle, d_fin = calculer_fin_avec_contraintes(date_debut, duree, tech, equipements, absences)
             
             st.session_state.data["equipements"].append({
                 "id": nom, 
                 "tech": tech, 
                 "statut": "Actif",
-                "debut": str(date_reelle_debut),
-                "fin_prevue": str(date_actuelle)
+                "debut": str(d_reelle),
+                "fin_prevue": str(d_fin)
             })
             save_data()
-            st.success(f"Planifié : {date_reelle_debut} au {date_actuelle}")
+            st.success(f"Planifié : {d_reelle} au {d_fin}")
             st.rerun()
 
     st.subheader("Modifier / Ajuster une machine")
@@ -352,59 +367,50 @@ with tabs[2]:
 
     # --- SECTION REPLANIFICATION EN CASCADE ---
     st.subheader("🔄 Replanification en cascade par Technicien")
-    st.markdown("Si une machine a été prolongée ou décalée, ce bouton permet de réajuster automatiquement toutes les machines suivantes de ce technicien pour éviter les collisions.")
+    st.markdown("Si une machine a été prolongée, décalée ou que des congés ont été ajoutés, ce bouton permet de réajuster automatiquement toutes les machines suivantes de ce technicien.")
     
     col_tech_casc, col_btn_casc = st.columns([2, 1])
     tech_a_replanifier = col_tech_casc.selectbox("Technicien concerné", st.session_state.data["techniciens"], key="tech_cascade")
     
     if col_btn_casc.button("⚡ Lancer la cascade"):
-        # Récupérer les machines actives/bloquées du tech triées par date de début
         machines_tech = sorted(
             [e for e in st.session_state.data["equipements"] if e.get("tech") == tech_a_replanifier and e.get("statut") in ["Actif", "Bloqué"]],
             key=lambda x: x["debut"]
         )
         
-        if len(machines_tech) > 1:
+        if len(machines_tech) > 0:
+            absences = st.session_state.data.get("absences", [])
+            equipements = st.session_state.data.get("equipements", [])
             modifications_faites = 0
-            for i in range(len(machines_tech) - 1):
-                machine_actuelle = machines_tech[i]
-                machine_suivante = machines_tech[i+1]
+            
+            # Repartir de la date de fin de la première machine, ou recalculer en chaîne
+            derniere_fin_connue = None
+            for i, machine in enumerate(machines_tech):
+                d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
+                d_fin_orig = datetime.datetime.strptime(machine["fin_prevue"], '%Y-%m-%d').date()
+                duree_machine = max(1, (d_fin_orig - d_deb_orig).days) # approximation de durée ou calcul net
                 
-                fin_actuelle = datetime.datetime.strptime(machine_actuelle["fin_prevue"], '%Y-%m-%d').date()
-                debut_suivant = datetime.datetime.strptime(machine_suivante["debut"], '%Y-%m-%d').date()
+                if i == 0:
+                    # La première machine garde son début, mais on s'assure qu'elle intègre sa fin avec les contraintes
+                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(d_deb_orig, duree_machine, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
+                else:
+                    # Pour les suivantes, elles doivent commencer après la fin de la précédente
+                    prochain_jour_possible = derniere_fin_connue + datetime.timedelta(days=1)
+                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(prochain_jour_possible, duree_machine, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
                 
-                # Calcul de la durée initiale de la machine suivante en jours ouvrés
-                d_deb_suiv = datetime.datetime.strptime(machine_suivante["debut"], '%Y-%m-%d').date()
-                d_fin_suiv = datetime.datetime.strptime(machine_suivante["fin_prevue"], '%Y-%m-%d').date()
-                duree_suivante = max(1, (d_fin_suiv - d_deb_suiv).days)
+                if machine["debut"] != str(nouveau_deb) or machine["fin_prevue"] != str(nouvelle_fin):
+                    machine["debut"] = str(nouveau_deb)
+                    machine["fin_prevue"] = str(nouvelle_fin)
+                    modifications_faites += 1
                 
-                # Le nouveau début idéal est le lendemain de la fin de la machine précédente (en sautant les week-ends)
-                nouveau_debut = fin_actuelle + datetime.timedelta(days=1)
-                while nouveau_debut.weekday() >= 5:
-                    nouveau_debut += datetime.timedelta(days=1)
-                
-                # Si la machine suivante ne commence pas déjà au bon endroit (qu'il y ait du retard ou de l'avance)
-                if debut_suivant != nouveau_debut:
-                    nouvelle_fin = nouveau_debut
-                    jours_a_ajouter = duree_suivante
-                    while jours_a_ajouter > 0:
-                        nouvelle_fin += datetime.timedelta(days=1)
-                        if nouvelle_fin.weekday() < 5:
-                            jours_a_ajouter -= 1
-                            
-                    # Mettre à jour la machine suivante dans la session
-                    for e in st.session_state.data["equipements"]:
-                        if e["id"] == machine_suivante["id"] and e.get("tech") == tech_a_replanifier:
-                            e["debut"] = str(nouveau_debut)
-                            e["fin_prevue"] = str(nouvelle_fin)
-                            modifications_faites += 1
-                            
+                derniere_fin_connue = datetime.datetime.strptime(machine["fin_prevue"], '%Y-%m-%d').date()
+            
             save_data()
             if modifications_faites > 0:
-                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) (ajustée(s) en avance ou en retard).")
+                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) en tenant compte des congés.")
                 st.rerun()
             else:
-                st.info("Le planning est déjà parfaitement aligné.")
+                st.info("Le planning est déjà parfaitement aligné avec les contraintes.")
         else:
             st.info("Pas assez de machines en cours pour ce technicien pour faire une cascade.")
     st.divider()
