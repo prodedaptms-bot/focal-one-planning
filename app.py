@@ -220,14 +220,13 @@ if st.button("Générer le Gantt pro (.html)"):
         if df_gantt:
             df_plot = pd.DataFrame(df_gantt)
             
-            # Palette de couleurs pro (tu peux l'ajuster ou utiliser une palette Plotly)
-            color_map = {
-                "Thomas": "#2b5c8f",
-                "Lucas": "#e67e22",
-                "Non assigné": "#95a5a6"
-            }
+            # Palette dynamique basée sur vos techniciens enregistrés pour forcer les couleurs
+            liste_techs = st.session_state.data.get("techniciens", ["Thomas", "Lucas"])
+            couleurs_palette = ["#2b5c8f", "#e67e22", "#27ae60", "#8e44ad", "#e74c3c", "#34495e"]
+            color_map = {tech: couleurs_palette[i % len(couleurs_palette)] for i, tech in enumerate(liste_techs)}
+            color_map["Non assigné"] = "#95a5a6"
             
-            # Création du diagramme avec coloration par Technicien
+            # Création du diagramme
             fig = px.timeline(
                 df_plot, 
                 x_start="Debut", 
@@ -239,18 +238,26 @@ if st.button("Générer le Gantt pro (.html)"):
                 title="Planning de Production - Atelier Focal One"
             )
             
-            # Amélioration du design global du graphique
+            # Forcer le début de l'axe X à la date d'aujourd'hui (extraction)
+            date_aujourdhui_str = datetime.date.today().strftime('%Y-%m-%d')
+            
+            # Amélioration du design global et du cadrage des dates
             fig.update_yaxes(autorange="reversed") # Première machine en haut
             fig.update_layout(
-                xaxis_title="Chronologie",
+                xaxis=dict(
+                    title="Chronologie",
+                    range=[date_aujourdhui_str, None], # Commence aujourd'hui, s'adapte à la fin max
+                    type="date"
+                ),
                 yaxis_title="Équipements",
                 plot_bgcolor="#f8f9fa",
                 paper_bgcolor="#ffffff",
                 font=dict(family="Arial, sans-serif", size=12),
-                title_font=dict(size=18, color="#2c3e50")
+                title_font=dict(size=18, color="#2c3e50"),
+                legend_title_text="Techniciens"
             )
             
-            # Conversion de ton bandeau image en Base64 pour l'intégrer proprement dans le HTML
+            # Conversion de ton bandeau image en Base64
             bandeau_html = ""
             bandeau_path = os.path.join(BASE_DIR, 'fond_bandeau.jpg')
             if os.path.exists(bandeau_path):
@@ -258,7 +265,7 @@ if st.button("Générer le Gantt pro (.html)"):
                     encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
                     bandeau_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/jpeg;base64,{encoded_img}" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;"></div>'
 
-            # Génération du code HTML final incluant le bandeau et le graphique
+            # Génération du code HTML final
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -288,12 +295,11 @@ if st.button("Générer le Gantt pro (.html)"):
                 file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
                 mime="text/html"
             )
-            st.success("Gantt pro généré avec succès avec votre bandeau et les couleurs par technicien !")
+            st.success("Gantt pro généré avec succès (cadré à partir d'aujourd'hui avec les bonnes couleurs) !")
         else:
             st.warning("Pas assez de données pour générer le diagramme.")
     else:
         st.info("Aucune machine enregistrée.")
-
 # 1. HISTORIQUE
 with tabs[1]:
     st.subheader("⚠️ Administration")
