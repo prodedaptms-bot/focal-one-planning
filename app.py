@@ -52,6 +52,44 @@ st.title("Focal One Planner")
 
 tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
 
+import json
+import os
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("⚙️ Gestion des données")
+
+# 1. Bouton de téléchargement (que tu as peut-être déjà)
+if os.path.exists("donnees_atelier.json"):
+    with open("donnees_atelier.json", "r", encoding="utf-8") as f:
+        json_data = f.read()
+    
+    st.sidebar.download_button(
+        label="📥 Télécharger la base JSON",
+        data=json_data,
+        file_name="donnees_atelier.json",
+        mime="application/json"
+    )
+
+# 2. Bouton d'import de sauvegarde
+uploaded_file = st.sidebar.file_uploader("📤 Importer une sauvegarde (.json)", type=["json"])
+
+if uploaded_file is not None:
+    try:
+        # Lecture du fichier JSON uploadé
+        bytes_data = uploaded_file.getvalue()
+        data_chargee = json.loads(bytes_data.decode("utf-8"))
+        
+        # Sauvegarde locale sur le serveur / conteneur
+        with open("donnees_atelier.json", "w", encoding="utf-8") as f:
+            json.dump(data_chargee, f, ensure_ascii=False, indent=4)
+        
+        # Mise à jour immédiate de la session Streamlit
+        st.session_state.data = data_chargee
+        
+        st.sidebar.success("Données importées avec succès ! Rechargez la page si nécessaire.")
+    except Exception as e:
+        st.sidebar.error(f"Erreur lors de l'import du fichier : {e}")
+
 # 0. DASHBOARD
 with tabs[0]:
     st.subheader("Vue d'ensemble - Temps Réel")
