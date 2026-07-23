@@ -26,12 +26,33 @@ DATA_FILE = os.path.join(BASE_DIR, "donnees_atelier.json")
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {
+        # Base de données par défaut avec des exemples de manquants intégrés
+        default_data = {
             "techniciens": ["Thomas", "Lucas"], 
-            "equipements": [], 
+            "equipements": [
+                {
+                    "id": "OF-10023",
+                    "tech": "Thomas",
+                    "statut": "Actif",
+                    "debut": str(datetime.date.today()),
+                    "fin_prevue": str(datetime.date.today() + datetime.timedelta(days=10)),
+                    "duree_jours": 10
+                }
+            ], 
             "absences": [],
-            "manquants": []
+            "manquants": [
+                {"of": "OF-10023", "article": "Carte mère V2", "quantite": 1},
+                {"of": "OF-10023", "article": "Vis M4x10", "quantite": 12},
+                {"of": "OF-10024", "article": "Carte mère V2", "quantite": 1},
+                {"of": "OF-10025", "article": "Capteur optique", "quantite": 2},
+                {"of": "OF-10025", "article": "Vis M4x10", "quantite": 4},
+                {"of": "OF-10025", "article": "Connecteur RJ45", "quantite": 3}
+            ]
         }
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(default_data, f, ensure_ascii=False, indent=4)
+        return default_data
+
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f: 
             data = json.load(f)
@@ -664,7 +685,6 @@ with tabs[5]:
         
         # Calculs clés
         total_lignes_manquants = len(df_manq)
-        # Nombre d'OF distincts ayant des manquants
         nb_of_concernes = df_manq[col_of].nunique() if col_of in df_manq.columns else 1
         moyenne_manquants_par_of = total_lignes_manquants / nb_of_concernes if nb_of_concernes > 0 else 0
         
