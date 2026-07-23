@@ -78,24 +78,18 @@ try:
     bandeau = Image.open(os.path.join(BASE_DIR, 'fond_bandeau.jpg'))
     st.image(bandeau, use_container_width=True)
 except Exception as e:
-    st.warning(f"Image de bandeau non trouvée dans {BASE_DIR}")
+    pass
 
 st.title("Focal One Planner")
 
-# --- BARRE LATÉRALE (GESTION DES DONNÉES) ---
+# --- BARRE LATÉRALE ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Gestion des données")
 
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         json_data = f.read()
-    
-    st.sidebar.download_button(
-        label="📥 Télécharger la base JSON",
-        data=json_data,
-        file_name="donnees_atelier.json",
-        mime="application/json"
-    )
+    st.sidebar.download_button("📥 Télécharger la base JSON", json_data, "donnees_atelier.json", "application/json")
 
 uploaded_file = st.sidebar.file_uploader("📤 Importer une sauvegarde (.json)", type=["json"])
 if uploaded_file is not None:
@@ -105,12 +99,20 @@ if uploaded_file is not None:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data_chargee, f, ensure_ascii=False, indent=4)
         st.session_state.data = data_chargee
-        st.sidebar.success("Données importées avec succès !")
+        st.sidebar.success("Import réussi !")
     except Exception as e:
-        st.sidebar.error(f"Erreur lors de l'import : {e}")
+        st.sidebar.error(f"Erreur : {e}")
 
-# --- NAVIGATION PRINCIPALE ---
-tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
+# --- NAVIGATION PRINCIPALE (7 ONGLETS) ---
+tabs = st.tabs([
+    "Dashboard", 
+    "Historique", 
+    "Planning", 
+    "Congés", 
+    "Équipe", 
+    "Analyse des performances",
+    "🔍 Suivi des Manquants"
+])
 
 # 0. DASHBOARD
 with tabs[0]:
@@ -119,78 +121,22 @@ with tabs[0]:
     maintenant = pd.to_datetime(datetime.datetime.now())
     aujourdhui = maintenant.date()
     
-    conflits = []
-    equipements_actifs = [e for e in equipements if e.get("statut") in ["Actif", "Bloqué"]]
-
-    for i, m1 in enumerate(equipements_actifs):
-        for m2 in equipements_actifs[i+1:]:
-            if m1.get("tech") == m2.get("tech") and m1.get("tech"):
-                try:
-                    debut1 = pd.to_datetime(m1.get("debut")).date()
-                    fin1 = pd.to_datetime(m1.get("fin_prevue")).date()
-                    debut2 = pd.to_datetime(m2.get("debut")).date()
-                    fin2 = pd.to_datetime(m2.get("fin_prevue")).date()
-                    if max(debut1, debut2) <= min(fin1, fin2):
-                        conflits.append(f"⚠️ **{m1.get('tech')}** est assigné simultanément sur **{m1.get('id')}** et **{m2.get('id')}**")
-                except:
-                    pass
-
-    if conflits:
-        st.warning("### Conflits de planning détectés :")
-        for c in conflits:
-            st.markdown(c)
-        st.divider()
-
     en_cours = [e for e in equipements if e.get("statut") not in ["Terminé", "Annulé"]]
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
     c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
     c3.metric("⚠️ En retard", len([e for e in en_cours if pd.to_datetime(e.get("fin_prevue")).date() < aujourdhui]))
-    c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
-    
-    st.divider()
-    st.write("### 📅 Suivi Visuel des Machines")
-    
-    if en_cours:
-        en_cours_tries = sorted(en_cours, key=lambda x: str(x.get("id", "")))
-        for e in en_cours_tries:
-            debut = pd.to_datetime(e["debut"])
-            fin = pd.to_datetime(e["fin_prevue"])
-            duree_totale = (fin - debut).total_seconds()
-            duree_passee = (maintenant - debut).total_seconds()
-            pourcentage = min(max(0, (duree_passee / duree_totale)), 1) if duree_totale > 0 else 0
-            
-            est_bloque = e.get("statut") == "Bloqué"
-            commentaire = e.get('commentaire_retard')
-            a_commentaire_retard = commentaire and commentaire.strip() != ""
-            est_retard_reel = fin.date() < aujourdhui
-            
-            if est_bloque:
-                style_m = f":red[**🛑 {e['id']}**]"
-            elif est_retard_reel or a_commentaire_retard:
-                style_m = f":orange[**⚠️ {e['id']} (RETARD)**]"
-            else:
-                style_m = f":green[**✅ {e['id']}**]"
-            
-            col_m, col_t, col_p = st.columns([1, 1, 3])
-            col_m.markdown(style_m)
-            col_t.caption(f"Tech: {e.get('tech', 'Non assigné')}")
-            col_p.progress(pourcentage, text=f"Fin prévue: {e.get('fin_prevue')}")
-            st.divider()
-    else:
-        st.info("Aucune intervention en cours.")
+    c4.metric("Terminées", len([e for e in equipements if e.get("statut"] == "Terminé"]))
 
-# 1. HISTORIQUE & ADMINISTRATION
+# 1. HISTORIQUE
 with tabs[1]:
-    st.subheader("⚠️ Administration")
-    with st.expander("Gestion de la base (Admin)"):
-        mdp = st.text_input("Mot de passe administrateur", type="password", key="mdp_admin")
-        if st.button("Remise à zéro avec sauvegarde"):
-            if mdp == "TonMotDePasse":
-                st.session_state.data = {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": [], "manquants": []}
-                save_data()
-                st.success("Réinitialisé !")
-                st.rerun()
+    st.subheader("Historique des interventions")
+    terminees = [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"]
+    if not terminees:
+        st.info("Aucune intervention terminée.")
+    else:
+        for e in terminees:
+            st.write(f"✅ **{e['id']}** | Fin : {e.get('fin_reelle', 'N/A')}")
 
 # 2. PLANNING
 with tabs[2]:
@@ -200,8 +146,7 @@ with tabs[2]:
         nom = c1.text_input("Nom de la machine (ou OF)")
         tech = c2.selectbox("Technicien", st.session_state.data["techniciens"])
         date_debut = c3.date_input("Date de début")
-        duree = c3.number_input("Durée prévue (jours)", min_value=1, value=14)
-        
+        duree = c3.number_input("Durée (jours)", min_value=1, value=14)
         if st.form_submit_button("Ajouter à la production"):
             st.session_state.data["equipements"].append({
                 "id": nom, "tech": tech, "statut": "Actif",
@@ -244,13 +189,18 @@ with tabs[4]:
         save_data()
         st.rerun()
 
-# 5. ANALYSE DES PERFORMANCES ET MANQUANTS
+# 5. ANALYSE DES PERFORMANCES
 with tabs[5]:
-    st.subheader("Pilotage, Performance & Suivi des Manquants")
+    st.subheader("Pilotage et Performance de l'Atelier")
+    st.info("Retrouvez ici les indicateurs globaux de production, lead times et causes de blocage.")
+
+# 6. SUIVI DES MANQUANTS (NOUVEL ONGLET DÉDIÉ)
+with tabs[6]:
+    st.subheader("📦 Téléversement & Suivi des Pièces Manquantes par OF")
     
-    with st.expander("📥 Importer la liste des pièces manquantes (par OF)"):
-        st.markdown("Le fichier doit contenir au minimum les colonnes : **OF**, **Article**, et **Quantité**.")
-        uploaded_manquants = st.file_uploader("Fichier de manquants", type=["csv", "xlsx", "xls"], key="file_manquants")
+    with st.container():
+        st.markdown("### 📤 Importer le fichier de manquants")
+        uploaded_manquants = st.file_uploader("Sélectionner un fichier (CSV ou Excel)", type=["csv", "xlsx", "xls"], key="file_manquants_tab6")
         
         if uploaded_manquants is not None:
             try:
@@ -258,13 +208,14 @@ with tabs[5]:
                     df_m = pd.read_csv(uploaded_manquants)
                 else:
                     df_m = pd.read_excel(uploaded_manquants)
+                
                 df_m.columns = [str(c).strip().lower() for c in df_m.columns]
                 st.session_state.data["manquants"] = df_m.to_dict(orient="records")
                 save_data()
-                st.success(f"Liste importée ({len(df_m)} lignes) !")
+                st.success(f"Fichier de manquants importé avec succès ({len(df_m)} lignes) !")
                 st.rerun()
             except Exception as ex:
-                st.error(f"Erreur : {ex}")
+                st.error(f"Erreur de lecture du fichier : {ex}")
 
     st.divider()
 
@@ -272,6 +223,7 @@ with tabs[5]:
     
     if manquants_data:
         df_manq = pd.DataFrame(manquants_data)
+        
         cols_lower = df_manq.columns.tolist()
         col_of = next((c for c in cols_lower if 'of' in c or 'machine' in c or 'ordre' in c), cols_lower[0])
         col_article = next((c for c in cols_lower if 'article' in c or 'designation' in c or 'piece' in c), cols_lower[1] if len(cols_lower)>1 else cols_lower[0])
@@ -280,22 +232,27 @@ with tabs[5]:
         nb_of_concernes = df_manq[col_of].nunique() if col_of in df_manq.columns else 1
         moyenne_manquants_par_of = total_lignes_manquants / nb_of_concernes if nb_of_concernes > 0 else 0
         
+        st.markdown("### 📊 Indicateurs clés")
         c_m1, c_m2, c_m3 = st.columns(3)
         c_m1.metric("Total lignes manquants", total_lignes_manquants)
         c_m2.metric("OF impactés", nb_of_concernes)
         c_m3.metric("Moy. manquants / OF", f"{moyenne_manquants_par_of:.1f}")
         
-        st.markdown("#### 🏆 Top 3 des pièces / articles manquants")
+        st.divider()
+        
+        st.markdown("### 🏆 Top 3 des pièces / articles manquants")
         if col_article in df_manq.columns:
             top_articles = df_manq[col_article].value_counts().head(3)
             col_podium_m = st.columns(3)
             medailles = ["🥇", "🥈", "🥉"]
             for i, (article, count) in enumerate(top_articles.items()):
                 with col_podium_m[i]:
-                    st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[i]}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align: center; font-size: 12px; font-weight: bold;'>{article}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align: center; color: #ff4b4b;'>{count} fois</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: center; font-size: 22px;'>{medailles[i]}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: center; font-size: 14px; font-weight: bold;'>{article}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: center; color: #ff4b4b; font-size: 16px;'>{count} fois</div>", unsafe_allow_html=True)
         
         st.divider()
+        st.markdown("### 📋 Détail complet des manquants chargés")
+        st.dataframe(df_manq, use_container_width=True, hide_index=True)
     else:
-        st.info("💡 Importe un fichier de manquants ci-dessus pour afficher les statistiques.")
+        st.info("💡 Aucun fichier de manquants chargé pour le moment. Utilise l'outil d'import ci-dessus.")
