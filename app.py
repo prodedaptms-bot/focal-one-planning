@@ -4,7 +4,6 @@ import json, os
 import pandas as pd
 import datetime
 from PIL import Image
-import gspread
 import shutil
 
 # --- CONFIGURATION INITIALE ---
@@ -17,7 +16,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-BASE_DIR = r"C:\Planning"
+# Gestion du dossier de travail (compatible local et Cloud)
+# Si on est en local sur Windows, on garde C:\Planning, sinon on utilise le dossier courant du script
+BASE_DIR = r"C:\Planning" if os.path.exists(r"C:\Planning") else os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "donnees_atelier.json")
 
 def load_data():
@@ -37,16 +38,22 @@ def load_data():
         return {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": []}
 
 def save_data():
-    with open(DATA_FILE, "w", encoding="utf-8") as f: json.dump(st.session_state.data, f)
+    # S'assure que le dossier existe avant d'écrire
+    if not os.path.exists(BASE_DIR):
+        os.makedirs(BASE_DIR, exist_ok=True)
+    with open(DATA_FILE, "w", encoding="utf-8") as f: 
+        json.dump(st.session_state.data, f, ensure_ascii=False, indent=4)
 
 if "data" not in st.session_state: st.session_state.data = load_data()
 
 # --- INTERFACE HAUT DE PAGE ---
 try:
-    bandeau = Image.open(os.path.join(BASE_DIR, 'fond_bandeau.jpg'))
-    st.image(bandeau, use_container_width=True)
-except:
-    st.warning("Image de bandeau non trouvée dans C:\Planning")
+    bandeau_path = os.path.join(BASE_DIR, 'fond_bandeau.jpg')
+    if os.path.exists(bandeau_path):
+        bandeau = Image.open(bandeau_path)
+        st.image(bandeau, use_container_width=True)
+except Exception:
+    pass # Ignore si l'image n'est pas présente en ligne
 
 st.title("Focal One Planner")
 
@@ -201,14 +208,14 @@ with tabs[1]:
         
         if st.button("Remise à zéro avec sauvegarde"):
             if mdp == "TonMotDePasse":
-                data_dir = "C:/Planning"
-                archive_dir = os.path.join(data_dir, "Archives")
+                archive_dir = os.path.join(BASE_DIR, "Archives")
                 if not os.path.exists(archive_dir):
                     os.makedirs(archive_dir)
                 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_path = os.path.join(archive_dir, f"backup_{timestamp}.json")
-                shutil.copy(os.path.join(data_dir, "donnees_atelier.json"), backup_path)
+                if os.path.exists(DATA_FILE):
+                    shutil.copy(DATA_FILE, backup_path)
                 
                 st.session_state.data = {
                     "techniciens": ["Thomas", "Lucas"], 
@@ -286,26 +293,29 @@ with tabs[2]:
 
     st.subheader("Modifier / Ajuster une machine")
 
-    machine_id = st.selectbox("Choisir une machine", [e['id'] for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]])
+    machines_actives_list = [e['id'] for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]]
+    if machines_actives_list:
+        machine_id = st.selectbox("Choisir une machine", machines_actives_list)
+        machine_concernee = next((e for e in st.session_state.data["equipements"] if e['id'] == machine_id), None)
 
-    machine_concernee = next((e for e in st.session_state.data["equipements"] if e['id'] == machine_id), None)
-
-    if machine_concernee:
-        nouveau_statut = st.selectbox("Statut", ["Actif", "Bloqué", "Terminé"], index=["Actif", "Bloqué", "Terminé"].index(machine_concernee.get("statut", "Actif")))
-        
-        date_fin_actuelle = datetime.datetime.strptime(machine_concernee.get('fin_prevue'), '%Y-%m-%d').date()
-        nouvelle_fin = st.date_input("Ajuster la date de fin prévue", value=date_fin_actuelle)
-        
-        commentaire = st.text_input("Motif du décalage / Commentaire", value=machine_concernee.get("commentaire_retard", ""))
-        
-        if st.button("Enregistrer les modifications"):
-            machine_concernee["statut"] = nouveau_statut
-            machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
-            machine_concernee["commentaire_retard"] = commentaire
+        if machine_concernee:
+            nouveau_statut = st.selectbox("Statut", ["Actif", "Bloqué", "Terminé"], index=["Actif", "Bloqué", "Terminé"].index(machine_concernee.get("statut", "Actif")))
             
-            save_data()
-            st.success(f"La machine {machine_id} a été mise à jour avec succès !")
-            st.rerun()
+            date_fin_actuelle = datetime.datetime.strptime(machine_concernee.get('fin_prevue'), '%Y-%m-%d').date()
+            nouvelle_fin = st.date_input("Ajuster la date de fin prévue", value=date_fin_actuelle)
+            
+            commentaire = st.text_input("Motif du décalage / Commentaire", value=machine_concernee.get("commentaire_retard", ""))
+            
+            if st.button("Enregistrer les modifications"):
+                machine_concernee["statut"] = nouveau_statut
+                machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
+                machine_concernee["commentaire_retard"] = commentaire
+                
+                save_data()
+                st.success(f"La machine {machine_id} a été mise à jour avec succès !")
+                st.rerun()
+    else:
+        st.info("Aucune machine active à modifier.")
 
     st.divider()
 
@@ -317,7 +327,6 @@ with tabs[2]:
     tech_a_replanifier = col_tech_casc.selectbox("Technicien concerné", st.session_state.data["techniciens"], key="tech_cascade")
     
     if col_btn_casc.button("⚡ Lancer la cascade"):
-        # Récupérer les machines actives/bloquées du tech triées par date de début
         machines_tech = sorted(
             [e for e in st.session_state.data["equipements"] if e.get("tech") == tech_a_replanifier and e.get("statut") in ["Actif", "Bloqué"]],
             key=lambda x: x["debut"]
@@ -332,17 +341,14 @@ with tabs[2]:
                 fin_actuelle = datetime.datetime.strptime(machine_actuelle["fin_prevue"], '%Y-%m-%d').date()
                 debut_suivant = datetime.datetime.strptime(machine_suivante["debut"], '%Y-%m-%d').date()
                 
-                # Calcul de la durée initiale de la machine suivante en jours ouvrés
                 d_deb_suiv = datetime.datetime.strptime(machine_suivante["debut"], '%Y-%m-%d').date()
                 d_fin_suiv = datetime.datetime.strptime(machine_suivante["fin_prevue"], '%Y-%m-%d').date()
                 duree_suivante = max(1, (d_fin_suiv - d_deb_suiv).days)
                 
-                # Le nouveau début idéal est le lendemain de la fin de la machine précédente (en sautant les week-ends)
                 nouveau_debut = fin_actuelle + datetime.timedelta(days=1)
                 while nouveau_debut.weekday() >= 5:
                     nouveau_debut += datetime.timedelta(days=1)
                 
-                # Si la machine suivante ne commence pas déjà au bon endroit (qu'il y ait du retard ou de l'avance)
                 if debut_suivant != nouveau_debut:
                     nouvelle_fin = nouveau_debut
                     jours_a_ajouter = duree_suivante
@@ -351,7 +357,6 @@ with tabs[2]:
                         if nouvelle_fin.weekday() < 5:
                             jours_a_ajouter -= 1
                             
-                    # Mettre à jour la machine suivante dans la session
                     for e in st.session_state.data["equipements"]:
                         if e["id"] == machine_suivante["id"] and e.get("tech") == tech_a_replanifier:
                             e["debut"] = str(nouveau_debut)
@@ -450,7 +455,7 @@ with tabs[4]:
     for i, t in enumerate(list(st.session_state.data["techniciens"])):
         col1, col2 = st.columns([3, 1])
         col1.write(t)
-        if col2.button("Suppr", key=f"del_{i}"):
+        if col2.button("Suppr", key=f"del_tech_{i}"):
             st.session_state.data["techniciens"].remove(t)
             save_data(); st.rerun()
     
