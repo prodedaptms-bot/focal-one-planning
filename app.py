@@ -29,16 +29,19 @@ def load_data():
         return {
             "techniciens": ["Thomas", "Lucas"], 
             "equipements": [], 
-            "absences": [] 
+            "absences": [],
+            "manquants": []
         }
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f: 
             data = json.load(f)
             if "absences" not in data:
                 data["absences"] = []
+            if "manquants" not in data:
+                data["manquants"] = []
             return data
     except: 
-        return {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": []}
+        return {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": [], "manquants": []}
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -128,7 +131,7 @@ with tabs[0]:
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
-    c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
+    c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut"] == "Bloqué"]))
     c3.metric("⚠️ En retard", len([e for e in en_cours if pd.to_datetime(e.get("fin_prevue")).date() < aujourdhui]))
     c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
     
@@ -341,7 +344,8 @@ with tabs[1]:
                 st.session_state.data = {
                     "techniciens": ["Thomas", "Lucas"], 
                     "equipements": [], 
-                    "absences": []
+                    "absences": [],
+                    "manquants": []
                 }
                 save_data()
                 st.success("Base archivée et réinitialisée avec succès !")
@@ -406,7 +410,7 @@ with tabs[2]:
 
     with st.form("ajout_machine", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
-        nom = c1.text_input("Nom de la machine")
+        nom = c1.text_input("Nom de la machine (ou OF)")
         tech = c2.selectbox("Technicien", st.session_state.data["techniciens"])
         date_debut = c3.date_input("Date de début")
         duree = c3.number_input("Durée prévue (jours)", min_value=1, value=14)
@@ -618,16 +622,77 @@ with tabs[4]:
             save_data()
             st.rerun()
 
-# 5. ANALYSE DES PERFORMANCES
+# 5. ANALYSE DES PERFORMANCES ET MANQUANTS
 with tabs[5]:
-    st.subheader("Pilotage et Performance Globale")
+    st.subheader("Pilotage, Performance & Suivi des Manquants")
     
+    # Section Import fichier Manquants (CSV ou Excel)
+    with st.expander("📥 Importer la liste des pièces manquantes (par OF)"):
+        st.markdown("Le fichier doit contenir au minimum les colonnes : **OF** (ou Machine), **Article** (ou Désignation), et **Quantité**.")
+        uploaded_manquants = st.file_uploader("Fichier de manquants", type=["csv", "xlsx", "xls"], key="file_manquants")
+        
+        if uploaded_manquants is not None:
+            try:
+                if uploaded_manquants.name.endswith('.csv'):
+                    df_m = pd.read_csv(uploaded_manquants)
+                else:
+                    df_m = pd.read_excel(uploaded_manquants)
+                
+                # Normalisation basique des noms de colonnes potentiels
+                df_m.columns = [str(c).strip().lower() for c in df_m.columns]
+                
+                # Convertir en dictionnaires pour stockage JSON
+                records = df_m.to_dict(orient="records")
+                st.session_state.data["manquants"] = records
+                save_data()
+                st.success(f"Liste des manquants importée avec succès ({len(records)} lignes) !")
+            except Exception as ex:
+                st.error(f"Erreur lors de la lecture du fichier : {ex}")
+
+    st.divider()
+
+    # Analyse des manquants
+    manquants_data = st.session_state.data.get("manquants", [])
+    
+    if manquants_data:
+        df_manq = pd.DataFrame(manquants_data)
+        
+        # Tentative de détection dynamique des colonnes clés
+        cols_lower = df_manq.columns.tolist()
+        col_of = next((c for c in cols_lower if 'of' in c or 'machine' in c or 'ordre' in c), cols_lower[0])
+        col_article = next((c for c in cols_lower if 'article' in c or 'designation' in c or 'piece' in c), cols_lower[1] if len(cols_lower)>1 else cols_lower[0])
+        
+        # Calculs clés
+        total_lignes_manquants = len(df_manq)
+        # Nombre d'OF distincts ayant des manquants
+        nb_of_concernes = df_manq[col_of].nunique() if col_of in df_manq.columns else 1
+        moyenne_manquants_par_of = total_lignes_manquants / nb_of_concernes if nb_of_concernes > 0 else 0
+        
+        c_m1, c_m2, c_m3 = st.columns(3)
+        c_m1.metric("Total lignes manquants", total_lignes_manquants)
+        c_m2.metric("OF impactés", nb_of_concernes)
+        c_m3.metric("Moy. manquants / OF", f"{moyenne_manquants_par_of:.1f}")
+        
+        st.markdown("#### 🏆 Top 3 des pièces / articles manquants")
+        if col_article in df_manq.columns:
+            top_articles = df_manq[col_article].value_counts().head(3)
+            col_podium_m = st.columns(3)
+            medailles = ["🥇", "🥈", "🥉"]
+            for i, (article, count) in enumerate(top_articles.items()):
+                with col_podium_m[i]:
+                    st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[i]}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: center; font-size: 12px; font-weight: bold;'>{article}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: center; color: #ff4b4b;'>{count} fois</div>", unsafe_allow_html=True)
+        
+        st.divider()
+    else:
+        st.info("💡 Importe un fichier de manquants via l'encart ci-dessus pour afficher les statistiques et le Top 3.")
+
+    # Performances de production classiques
     equipements = st.session_state.data.get("equipements", [])
     terminees = [e for e in equipements if e.get("statut") == "Terminé" and e.get("fin_reelle")]
     
-    if not terminees:
-        st.info("Terminez quelques interventions pour voir apparaître les indicateurs.")
-    else:
+    if terminees:
         ecarts = []
         lead_times = []
         respectes = 0
