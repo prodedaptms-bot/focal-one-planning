@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import json, os
+import json
+import os
 import pandas as pd
 import datetime
-from PIL import Image
 import shutil
+from PIL import Image
+import base64
+from collections import Counter
+import plotly.express as px
 
 # --- CONFIGURATION INITIALE ---
 st.set_page_config(layout="wide", page_title="Focal One Planner")
@@ -16,7 +20,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Détecte automatiquement le dossier du projet, que ce soit sur ton PC ou sur Streamlit Cloud
+# Détecte automatiquement le dossier du projet
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "donnees_atelier.json")
 
@@ -37,9 +41,11 @@ def load_data():
         return {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": []}
 
 def save_data():
-    with open(DATA_FILE, "w", encoding="utf-8") as f: json.dump(st.session_state.data, f)
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(st.session_state.data, f, ensure_ascii=False, indent=4)
 
-if "data" not in st.session_state: st.session_state.data = load_data()
+if "data" not in st.session_state:
+    st.session_state.data = load_data()
 
 # --- INTERFACE HAUT DE PAGE ---
 try:
@@ -50,17 +56,13 @@ except Exception as e:
 
 st.title("Focal One Planner")
 
-tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
-
-import json
-import os
-
+# --- BARRE LATÉRALE (GESTION DES DONNÉES) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Gestion des données")
 
-# 1. Bouton de téléchargement (que tu as peut-être déjà)
-if os.path.exists("donnees_atelier.json"):
-    with open("donnees_atelier.json", "r", encoding="utf-8") as f:
+# 1. Bouton de téléchargement de la base JSON
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
         json_data = f.read()
     
     st.sidebar.download_button(
@@ -72,23 +74,21 @@ if os.path.exists("donnees_atelier.json"):
 
 # 2. Bouton d'import de sauvegarde
 uploaded_file = st.sidebar.file_uploader("📤 Importer une sauvegarde (.json)", type=["json"])
-
 if uploaded_file is not None:
     try:
-        # Lecture du fichier JSON uploadé
         bytes_data = uploaded_file.getvalue()
         data_chargee = json.loads(bytes_data.decode("utf-8"))
         
-        # Sauvegarde locale sur le serveur / conteneur
-        with open("donnees_atelier.json", "w", encoding="utf-8") as f:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data_chargee, f, ensure_ascii=False, indent=4)
         
-        # Mise à jour immédiate de la session Streamlit
         st.session_state.data = data_chargee
-        
         st.sidebar.success("Données importées avec succès ! Rechargez la page si nécessaire.")
     except Exception as e:
         st.sidebar.error(f"Erreur lors de l'import du fichier : {e}")
+
+# --- NAVIGATION PRINCIPALE ---
+tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
 
 # 0. DASHBOARD
 with tabs[0]:
@@ -98,9 +98,7 @@ with tabs[0]:
     maintenant = pd.to_datetime(datetime.datetime.now())
     aujourdhui = maintenant.date()
     
-    # ---------------------------------------------------------
-    # 1. DÉTECTION DES CONFLITS PLANNING (Même technicien en double)
-    # ---------------------------------------------------------
+    # 1. DÉTECTION DES CONFLITS PLANNING
     conflits = []
     equipements_actifs = [e for e in equipements if e.get("statut") in ["Actif", "Bloqué"]]
 
@@ -125,22 +123,18 @@ with tabs[0]:
         st.info("💡 Pense à ajuster la date de fin ou à replanifier en cascade dans l'onglet Planning.")
         st.divider()
 
-    # ---------------------------------------------------------
     # 2. MÉTRIQUES
-    # ---------------------------------------------------------
     en_cours = [e for e in equipements if e.get("statut") not in ["Terminé", "Annulé"]]
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
     c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
     c3.metric("⚠️ En retard", len([e for e in en_cours if pd.to_datetime(e.get("fin_prevue")).date() < aujourdhui]))
-    c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
+    c4.metric("Terminées", len([e for e in equipements if e.get("statut"] == "Terminé"]))
     
     st.divider()
 
-    # ---------------------------------------------------------
-    # 3. SUIVI VISUEL DES MACHINES (Triées chronologiquement par ID)
-    # ---------------------------------------------------------
+    # 3. SUIVI VISUEL DES MACHINES
     st.write("### 📅 Suivi Visuel des Machines")
     
     if en_cours:
@@ -161,16 +155,16 @@ with tabs[0]:
             est_alerte_proche = aujourdhui <= fin.date() <= (aujourdhui + datetime.timedelta(days=3))
             
             if est_bloque:
-                style_m = ":red[**🛑 " + e['id'] + "**]"
-                couleur_tech = ":red[" + str(e.get('tech', 'Non assigné')) + "]"
+                style_m = f":red[**🛑 {e['id']}**]"
+                couleur_tech = f":red[{e.get('tech', 'Non assigné')}]"
             elif est_en_alerte:
-                style_m = ":orange[**⚠️ " + e['id'] + " (RETARD)**]"
-                couleur_tech = ":orange[" + str(e.get('tech', 'Non assigné')) + "]"
+                style_m = f":orange[**⚠️ {e['id']} (RETARD)**]"
+                couleur_tech = f":orange[{e.get('tech', 'Non assigné')}]"
             elif est_alerte_proche:
-                style_m = ":violet[**⏳ " + e['id'] + " (PROCHE)**]"
-                couleur_tech = ":violet[" + str(e.get('tech', 'Non assigné')) + "]"
+                style_m = f":violet[**⏳ {e['id']} (PROCHE)**]"
+                couleur_tech = f":violet[{e.get('tech', 'Non assigné')}]"
             else:
-                style_m = ":green[**✅ " + e['id'] + "**]"
+                style_m = f":green[**✅ {e['id']}**]"
                 couleur_tech = str(e.get('tech', 'Non assigné'))
             
             col_m, col_t, col_p = st.columns([1, 1, 3])
@@ -190,9 +184,7 @@ with tabs[0]:
     else:
         st.info("Aucune intervention en cours.")
 
-    # ---------------------------------------------------------
-    # 4. TABLEAU RÉCAPITULATIF (Trié chronologiquement par ID)
-    # ---------------------------------------------------------
+    # 4. TABLEAU RÉCAPITULATIF & EXPORT GANTT
     st.subheader("Détail du Planning")
     
     equipements_actifs_tries = sorted(
@@ -218,7 +210,6 @@ with tabs[0]:
     
     if data_to_display:
         df = pd.DataFrame(data_to_display)
-        
         st.dataframe(
             df, 
             use_container_width=True, 
@@ -227,127 +218,110 @@ with tabs[0]:
                 "Jours restants": st.column_config.NumberColumn(format="%d jours")
             }
         )
-        
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Télécharger le planning (CSV)", csv, "planning.csv", "text/csv")
     else:
         st.write("Aucune machine en cours de production.")
 
-import plotly.express as px
-import pandas as pd
-import datetime
-import base64
+    st.divider()
+    st.subheader("📊 Export Graphique de Gantt Personnalisé")
 
-st.subheader("📊 Export Graphique de Gantt Personnalisé")
-
-if st.button("Générer le Gantt pro (.html)"):
-    equipements = st.session_state.data.get("equipements", [])
-    
-    if equipements:
-        # Tri préalable des équipements par ID (ordre chronologique/alphabétique)
-        equipements_tries = sorted(
-            [e for e in equipements if e.get("statut") in ["Actif", "Bloqué", "Terminé"]],
-            key=lambda x: str(x.get("id", ""))
-        )
-        
-        df_gantt = []
-        for e in equipements_tries:
-            df_gantt.append(dict(
-                Machine=str(e.get("id")),
-                # Utilisation directe du format texte chaîne de caractères YYYY-MM-DD
-                Debut=str(e.get("debut")),
-                Fin=str(e.get("fin_prevue")),
-                Technicien=str(e.get("tech", "Non assigné")),
-                Statut=str(e.get("statut"))
-            ))
-        
-        if df_gantt:
-            df_plot = pd.DataFrame(df_gantt)
-            
-            # Liste exacte des machines triées pour figer l'ordre sur l'axe Y
-            liste_machines_ordonnees = df_plot["Machine"].tolist()
-            
-            # Palette dynamique basée sur vos techniciens enregistrés
-            liste_techs = st.session_state.data.get("techniciens", ["Thomas", "Lucas"])
-            couleurs_palette = ["#2b5c8f", "#e67e22", "#27ae60", "#8e44ad", "#e74c3c", "#34495e"]
-            color_map = {tech: couleurs_palette[i % len(couleurs_palette)] for i, tech in enumerate(liste_techs)}
-            color_map["Non assigné"] = "#95a5a6"
-            
-            # Création du diagramme de Gantt
-            fig = px.timeline(
-                df_plot, 
-                x_start="Debut", 
-                x_end="Fin", 
-                y="Machine", 
-                color="Technicien",
-                color_discrete_map=color_map,
-                hover_data=["Statut"],
-                title="Planning de Production - Atelier Focal One"
+    if st.button("Générer le Gantt pro (.html)"):
+        if equipements:
+            equipements_tries = sorted(
+                [e for e in equipements if e.get("statut") in ["Actif", "Bloqué", "Terminé"]],
+                key=lambda x: str(x.get("id", ""))
             )
             
-            # Paramétrage strict de l'axe Y (ordre des machines) et de l'axe X (type date forcé)
-            fig.update_layout(
-                yaxis=dict(
-                    categoryorder="array",
-                    categoryarray=liste_machines_ordonnees, 
-                    autorange="reversed" # Première machine en haut
-                ),
-                xaxis=dict(
-                    title="Chronologie",
-                    type="date" # Force le moteur de Plotly à interpréter les chaînes en calendrier réel 2026
-                ),
-                plot_bgcolor="#f8f9fa",
-                paper_bgcolor="#ffffff",
-                font=dict(family="Arial, sans-serif", size=12),
-                title_font=dict(size=18, color="#2c3e50"),
-                legend_title_text="Techniciens"
-            )
+            df_gantt = []
+            for e in equipements_tries:
+                df_gantt.append(dict(
+                    Machine=str(e.get("id")),
+                    Debut=str(e.get("debut")),
+                    Fin=str(e.get("fin_prevue")),
+                    Technicien=str(e.get("tech", "Non assigné")),
+                    Statut=str(e.get("statut"))
+                ))
             
-            # Conversion de ton bandeau image en Base64
-            bandeau_html = ""
-            bandeau_path = os.path.join(BASE_DIR, 'fond_bandeau.jpg')
-            if os.path.exists(bandeau_path):
-                with open(bandeau_path, "rb") as img_file:
-                    encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
-                    bandeau_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/jpeg;base64,{encoded_img}" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;"></div>'
+            if df_gantt:
+                df_plot = pd.DataFrame(df_gantt)
+                liste_machines_ordonnees = df_plot["Machine"].tolist()
+                
+                liste_techs = st.session_state.data.get("techniciens", ["Thomas", "Lucas"])
+                couleurs_palette = ["#2b5c8f", "#e67e22", "#27ae60", "#8e44ad", "#e74c3c", "#34495e"]
+                color_map = {tech: couleurs_palette[i % len(couleurs_palette)] for i, tech in enumerate(liste_techs)}
+                color_map["Non assigné"] = "#95a5a6"
+                
+                fig = px.timeline(
+                    df_plot, 
+                    x_start="Debut", 
+                    x_end="Fin", 
+                    y="Machine", 
+                    color="Technicien",
+                    color_discrete_map=color_map,
+                    hover_data=["Statut"],
+                    title="Planning de Production - Atelier Focal One"
+                )
+                
+                fig.update_layout(
+                    yaxis=dict(
+                        categoryorder="array",
+                        categoryarray=liste_machines_ordonnees, 
+                        autorange="reversed"
+                    ),
+                    xaxis=dict(
+                        title="Chronologie",
+                        type="date"
+                    ),
+                    plot_bgcolor="#f8f9fa",
+                    paper_bgcolor="#ffffff",
+                    font=dict(family="Arial, sans-serif", size=12),
+                    title_font=dict(size=18, color="#2c3e50"),
+                    legend_title_text="Techniciens"
+                )
+                
+                bandeau_html = ""
+                bandeau_path = os.path.join(BASE_DIR, 'fond_bandeau.jpg')
+                if os.path.exists(bandeau_path):
+                    with open(bandeau_path, "rb") as img_file:
+                        encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
+                        bandeau_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/jpeg;base64,{encoded_img}" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;"></div>'
 
-            # Génération du code HTML final
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>Planning de Production - Focal One</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f9; color: #333; }}
-                    .container {{ max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
-                    h1 {{ color: #2c3e50; text-align: center; margin-bottom: 25px; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    {bandeau_html}
-                    <h1>Planning de Production - Vue Gantt</h1>
-                    {fig.to_html(full_html=False, include_plotlyjs='cdn')}
-                </div>
-            </body>
-            </html>
-            """
-            
-            # Bouton de téléchargement
-            st.download_button(
-                label="📥 Télécharger le Gantt pro (.html)",
-                data=html_content,
-                file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
-                mime="text/html"
-            )
-            st.success("Gantt pro généré avec succès ! Les bonnes dates s'affichent désormais correctement.")
+                html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Planning de Production - Focal One</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f9; color: #333; }}
+                        .container {{ max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
+                        h1 {{ color: #2c3e50; text-align: center; margin-bottom: 25px; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        {bandeau_html}
+                        <h1>Planning de Production - Vue Gantt</h1>
+                        {fig.to_html(full_html=False, include_plotlyjs='cdn')}
+                    </div>
+                </body>
+                </html>
+                """
+                
+                st.download_button(
+                    label="📥 Télécharger le Gantt pro (.html)",
+                    data=html_content,
+                    file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
+                    mime="text/html"
+                )
+                st.success("Gantt pro généré avec succès !")
+            else:
+                st.warning("Pas assez de données pour générer le diagramme.")
         else:
-            st.warning("Pas assez de données pour générer le diagramme.")
-    else:
-        st.info("Aucune machine enregistrée.")
-        
-# 1. HISTORIQUE
+            st.info("Aucune machine enregistrée.")
+
+# 1. HISTORIQUE & ADMINISTRATION
 with tabs[1]:
     st.subheader("⚠️ Administration")
     
@@ -394,7 +368,6 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Planification et Suivi")
     
-    # Fonction utilitaire locale pour calculer une date en sautant weekends et congés
     def calculer_fin_avec_contraintes(date_debut_cal, duree_jours, tech_cible, equipements_actuels, absences_actuelles, ignore_eq_id=None):
         current_date = date_debut_cal
         
@@ -457,47 +430,47 @@ with tabs[2]:
             st.rerun()
 
     st.subheader("Modifier / Ajuster une machine")
-
     machines_actives_tries = sorted(
         [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
         key=lambda x: str(x.get("id", ""))
     )
-    machine_id = st.selectbox("Choisir une machine", [e['id'] for e in machines_actives_tries])
+    
+    if machines_actives_tries:
+        machine_id = st.selectbox("Choisir une machine", [e['id'] for e in machines_actives_tries])
+        machine_concernee = next((e for e in st.session_state.data["equipements"] if e['id'] == machine_id), None)
 
-    machine_concernee = next((e for e in st.session_state.data["equipements"] if e['id'] == machine_id), None)
-
-    if machine_concernee:
-        nouveau_statut = st.selectbox("Statut", ["Actif", "Bloqué", "Terminé"], index=["Actif", "Bloqué", "Terminé"].index(machine_concernee.get("statut", "Actif")))
-        
-        date_fin_actuelle = datetime.datetime.strptime(machine_concernee.get('fin_prevue'), '%Y-%m-%d').date()
-        nouvelle_fin = st.date_input("Ajuster la date de fin prévue", value=date_fin_actuelle)
-        
-        commentaire = st.text_input("Motif du décalage / Commentaire", value=machine_concernee.get("commentaire_retard", ""))
-        
-        if st.button("Enregistrer les modifications"):
-            machine_concernee["statut"] = nouveau_statut
-            machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
-            machine_concernee["commentaire_retard"] = commentaire
+        if machine_concernee:
+            nouveau_statut = st.selectbox("Statut", ["Actif", "Bloqué", "Terminé"], index=["Actif", "Bloqué", "Terminé"].index(machine_concernee.get("statut", "Actif")))
+            date_fin_actuelle = datetime.datetime.strptime(machine_concernee.get('fin_prevue'), '%Y-%m-%d').date()
+            nouvelle_fin = st.date_input("Ajuster la date de fin prévue", value=date_fin_actuelle)
+            commentaire = st.text_input("Motif du décalage / Commentaire", value=machine_concernee.get("commentaire_retard", ""))
             
-            d_deb = datetime.datetime.strptime(machine_concernee["debut"], '%Y-%m-%d').date()
-            d_fin = nouvelle_fin
-            temp_d = d_deb
-            nouvelle_duree = 0
-            while temp_d <= d_fin:
-                if temp_d.weekday() < 5:
-                    nouvelle_duree += 1
-                temp_d += datetime.timedelta(days=1)
-            machine_concernee["duree_jours"] = max(1, nouvelle_duree)
-            
-            save_data()
-            st.success(f"La machine {machine_id} a été mise à jour avec succès !")
-            st.rerun()
+            if st.button("Enregistrer les modifications"):
+                machine_concernee["statut"] = nouveau_statut
+                machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
+                machine_concernee["commentaire_retard"] = commentaire
+                
+                d_deb = datetime.datetime.strptime(machine_concernee["debut"], '%Y-%m-%d').date()
+                d_fin = nouvelle_fin
+                temp_d = d_deb
+                nouvelle_duree = 0
+                while temp_d <= d_fin:
+                    if temp_d.weekday() < 5:
+                        nouvelle_duree += 1
+                    temp_d += datetime.timedelta(days=1)
+                machine_concernee["duree_jours"] = max(1, nouvelle_duree)
+                
+                save_data()
+                st.success(f"La machine {machine_id} a été mise à jour avec succès !")
+                st.rerun()
+    else:
+        st.info("Aucune machine active à modifier.")
 
     st.divider()
 
-    # --- SECTION REPLANIFICATION EN CASCADE ---
+    # SECTION REPLANIFICATION EN CASCADE
     st.subheader("🔄 Replanification en cascade par Technicien")
-    st.markdown("Si une machine a été prolongée, décalée ou que des congés ont été ajoutés, ce bouton permet de réajuster automatiquement toutes les machines suivantes de ce technicien.")
+    st.markdown("Réajuste automatiquement toutes les machines suivantes de ce technicien.")
     
     col_tech_casc, col_btn_casc = st.columns([2, 1])
     tech_a_replanifier = col_tech_casc.selectbox("Technicien concerné", st.session_state.data["techniciens"], key="tech_cascade")
@@ -533,15 +506,16 @@ with tabs[2]:
             
             save_data()
             if modifications_faites > 0:
-                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s) proprement.")
+                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s).")
                 st.rerun()
             else:
                 st.info("Le planning est déjà parfaitement aligné.")
         else:
-            st.info("Pas assez de machines en cours pour ce technicien pour faire une cascade.")
+            st.info("Pas assez de machines en cours pour ce technicien.")
+            
     st.divider()
     
-    # Affichage des machines actives/bloquées triées chronologiquement par ID
+    # Affichage des actions rapides par machine active
     equipements_tries = sorted(
         enumerate(st.session_state.data["equipements"]), 
         key=lambda x: str(x[1].get("id", ""))
@@ -568,7 +542,9 @@ with tabs[2]:
                             st.error("Veuillez saisir une raison.")
             else:
                 if cols[1].button("▶️ Reprise", key=f"rep_{unique_key}"):
-                    e["statut"] = "Actif"; e.pop("cause_arret", None); save_data(); st.rerun()
+                    e["statut"] = "Actif"
+                    e.pop("cause_arret", None)
+                    save_data(); st.rerun()
             
             with cols[2].popover("⏱️ Retard"):
                 nb_jours = st.number_input("Jours de report", min_value=1, value=1, key=f"duree_{unique_key}")
@@ -616,9 +592,9 @@ with tabs[3]:
                 st.error("La date de fin doit être après la date de début.")
 
     st.divider()
-    for i, abs in enumerate(st.session_state.data["absences"]):
+    for i, abs_item in enumerate(st.session_state.data["absences"]):
         col1, col2 = st.columns([3, 1])
-        col1.write(f"📅 **{abs['tech']}** : du {abs['debut']} au {abs['fin']}")
+        col1.write(f"📅 **{abs_item['tech']}** : du {abs_item['debut']} au {abs_item['fin']}")
         if col2.button("Suppr", key=f"del_abs_{i}"):
             st.session_state.data["absences"].pop(i)
             save_data()
@@ -626,26 +602,28 @@ with tabs[3]:
 
 # 4. ÉQUIPE
 with tabs[4]:
+    st.subheader("Gestion des Techniciens")
     for i, t in enumerate(list(st.session_state.data["techniciens"])):
         col1, col2 = st.columns([3, 1])
         col1.write(t)
-        if col2.button("Suppr", key=f"del_{i}"):
+        if col2.button("Suppr", key=f"del_tech_{i}"):
             st.session_state.data["techniciens"].remove(t)
-            save_data(); st.rerun()
+            save_data()
+            st.rerun()
     
     new_t = st.text_input("Ajouter technicien")
     if st.button("Ajouter"):
         if new_t:
             st.session_state.data["techniciens"].append(new_t)
-            save_data(); st.rerun()
+            save_data()
+            st.rerun()
 
 # 5. ANALYSE DES PERFORMANCES
 with tabs[5]:
     st.subheader("Pilotage et Performance Globale")
-    from collections import Counter
     
     equipements = st.session_state.data.get("equipements", [])
-    terminees = [e for e in equipements if e.get("statut") == "Terminé" and e.get("fin_reelle")]
+    terminees = [e for e in equipements if e.get("statut"] == "Terminé" and e.get("fin_reelle")]
     
     if not terminees:
         st.info("Terminez quelques interventions pour voir apparaître les indicateurs.")
@@ -677,7 +655,7 @@ with tabs[5]:
         
         st.divider()
 
-        df = pd.DataFrame({
+        df_perf = pd.DataFrame({
             "Machine": [e["id"] for e in terminees],
             "Écart (j) (+ avance / - retard)": ecarts,
             "Lead Time (j)": lead_times
@@ -687,10 +665,10 @@ with tabs[5]:
         with c1:
             st.write("### Écarts (Avance vs Retard en jours)")
             couleur_ecart = "#00cc96" if moyen_ecart >= 0 else "#ff4b4b"
-            st.bar_chart(df["Écart (j) (+ avance / - retard)"], color=couleur_ecart)
+            st.bar_chart(df_perf["Écart (j) (+ avance / - retard)"], color=couleur_ecart)
         with c2:
             st.write("### Lead Time par machine")
-            st.bar_chart(df["Lead Time (j)"], color="#3385ff")
+            st.bar_chart(df_perf["Lead Time (j)"], color="#3385ff")
 
         st.divider()
 
@@ -715,11 +693,12 @@ with tabs[5]:
             st.write("### ⏱️ Top 3 Retards (Finitions)")
             retards = [e for e in terminees if e.get("commentaire_retard")]
             if retards:
-                causes = Counter([e["commentaire_retard"] for e in retards]).most_common(3)
-                col_podium = st.columns(3)
+                causes_retard = Counter([e["commentaire_retard"] for e in retards]).most_common(3)
+                col_podium_retard = st.columns(3)
                 medailles = ["🥇", "🥈", "🥉"]
-                for i, (cause, count) in enumerate(causes):
-                    with col_podium[i]:
+                for i, (cause, count) in enumerate(causes_retard):
+                    with col_podium_retard[i]:
+                        st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[i]}</div>", unsafe_allow_html=True)
                         st.markdown(f"<div style='text-align: center; font-size: 12px; font-weight: bold;'>{cause}</div>", unsafe_allow_html=True)
                         st.markdown(f"<div style='text-align: center; color: #ff4b4b;'>{count}x</div>", unsafe_allow_html=True)
             else:
