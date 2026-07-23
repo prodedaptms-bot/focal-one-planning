@@ -501,7 +501,7 @@ with tabs[6]:
         col_art_name = col_article[0] if col_article else df_manq.columns[1] if len(df_manq.columns) > 1 else col_of
 
         # Conversion propre en numérique pour les calculs
-        df_manq[col_qte] = pd.to_numeric(df_manq[col_qte], errors='fill_value').fillna(0)
+        df_manq[col_qte] = pd.to_numeric(df_manq[col_qte], errors='coerce').fillna(0)
 
         # --- KPI 1 : Nombre moyen de manquant par OF ---
         # Calcul par OF distinct
