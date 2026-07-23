@@ -13,32 +13,20 @@ import plotly.express as px
 # --- CONFIGURATION INITIALE ---
 st.set_page_config(layout="wide", page_title="Focal One Planner")
 
-# Suppression de la marge haute par défaut pour coller le bandeau
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# Détecte automatiquement le dossier du projet
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "donnees_atelier.json")
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        # Base de données par défaut avec des exemples de manquants intégrés
         default_data = {
             "techniciens": ["Thomas", "Lucas"], 
-            "equipements": [
-                {
-                    "id": "OF-10023",
-                    "tech": "Thomas",
-                    "statut": "Actif",
-                    "debut": str(datetime.date.today()),
-                    "fin_prevue": str(datetime.date.today() + datetime.timedelta(days=10)),
-                    "duree_jours": 10
-                }
-            ], 
+            "equipements": [], 
             "absences": [],
             "manquants": [
                 {"of": "OF-10023", "article": "Carte mère V2", "quantite": 1},
@@ -56,10 +44,24 @@ def load_data():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f: 
             data = json.load(f)
+            modified = False
             if "absences" not in data:
                 data["absences"] = []
+                modified = True
             if "manquants" not in data:
-                data["manquants"] = []
+                data["manquants"] = [
+                    {"of": "OF-10023", "article": "Carte mère V2", "quantite": 1},
+                    {"of": "OF-10023", "article": "Vis M4x10", "quantite": 12},
+                    {"of": "OF-10024", "article": "Carte mère V2", "quantite": 1},
+                    {"of": "OF-10025", "article": "Capteur optique", "quantite": 2},
+                    {"of": "OF-10025", "article": "Vis M4x10", "quantite": 4},
+                    {"of": "OF-10025", "article": "Connecteur RJ45", "quantite": 3}
+                ]
+                modified = True
+            
+            if modified:
+                with open(DATA_FILE, "w", encoding="utf-8") as fw:
+                    json.dump(data, fw, ensure_ascii=False, indent=4)
             return data
     except: 
         return {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": [], "manquants": []}
@@ -84,7 +86,6 @@ st.title("Focal One Planner")
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Gestion des données")
 
-# 1. Bouton de téléchargement de la base JSON
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         json_data = f.read()
@@ -96,20 +97,17 @@ if os.path.exists(DATA_FILE):
         mime="application/json"
     )
 
-# 2. Bouton d'import de sauvegarde
 uploaded_file = st.sidebar.file_uploader("📤 Importer une sauvegarde (.json)", type=["json"])
 if uploaded_file is not None:
     try:
         bytes_data = uploaded_file.getvalue()
         data_chargee = json.loads(bytes_data.decode("utf-8"))
-        
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data_chargee, f, ensure_ascii=False, indent=4)
-        
         st.session_state.data = data_chargee
-        st.sidebar.success("Données importées avec succès ! Rechargez la page si nécessaire.")
+        st.sidebar.success("Données importées avec succès !")
     except Exception as e:
-        st.sidebar.error(f"Erreur lors de l'import du fichier : {e}")
+        st.sidebar.error(f"Erreur lors de l'import : {e}")
 
 # --- NAVIGATION PRINCIPALE ---
 tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "Analyse des performances"])
@@ -117,12 +115,10 @@ tabs = st.tabs(["Dashboard", "Historique", "Planning", "Congés", "Équipe", "An
 # 0. DASHBOARD
 with tabs[0]:
     st.subheader("Vue d'ensemble - Temps Réel")
-    
     equipements = st.session_state.data.get("equipements", [])
     maintenant = pd.to_datetime(datetime.datetime.now())
     aujourdhui = maintenant.date()
     
-    # 1. DÉTECTION DES CONFLITS PLANNING
     conflits = []
     equipements_actifs = [e for e in equipements if e.get("statut") in ["Actif", "Bloqué"]]
 
@@ -134,7 +130,6 @@ with tabs[0]:
                     fin1 = pd.to_datetime(m1.get("fin_prevue")).date()
                     debut2 = pd.to_datetime(m2.get("debut")).date()
                     fin2 = pd.to_datetime(m2.get("fin_prevue")).date()
-                    
                     if max(debut1, debut2) <= min(fin1, fin2):
                         conflits.append(f"⚠️ **{m1.get('tech')}** est assigné simultanément sur **{m1.get('id')}** et **{m2.get('id')}**")
                 except:
@@ -144,12 +139,9 @@ with tabs[0]:
         st.warning("### Conflits de planning détectés :")
         for c in conflits:
             st.markdown(c)
-        st.info("💡 Pense à ajuster la date de fin ou à replanifier en cascade dans l'onglet Planning.")
         st.divider()
 
-    # 2. MÉTRIQUES
     en_cours = [e for e in equipements if e.get("statut") not in ["Terminé", "Annulé"]]
-    
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
     c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
@@ -157,8 +149,6 @@ with tabs[0]:
     c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
     
     st.divider()
-
-    # 3. SUIVI VISUEL DES MACHINES
     st.write("### 📅 Suivi Visuel des Machines")
     
     if en_cours:
@@ -173,262 +163,38 @@ with tabs[0]:
             est_bloque = e.get("statut") == "Bloqué"
             commentaire = e.get('commentaire_retard')
             a_commentaire_retard = commentaire and commentaire.strip() != ""
-            
             est_retard_reel = fin.date() < aujourdhui
-            est_en_alerte = est_retard_reel or a_commentaire_retard
-            est_alerte_proche = aujourdhui <= fin.date() <= (aujourdhui + datetime.timedelta(days=3))
             
             if est_bloque:
                 style_m = f":red[**🛑 {e['id']}**]"
-                couleur_tech = f":red[{e.get('tech', 'Non assigné')}]"
-            elif est_en_alerte:
+            elif est_retard_reel or a_commentaire_retard:
                 style_m = f":orange[**⚠️ {e['id']} (RETARD)**]"
-                couleur_tech = f":orange[{e.get('tech', 'Non assigné')}]"
-            elif est_alerte_proche:
-                style_m = f":violet[**⏳ {e['id']} (PROCHE)**]"
-                couleur_tech = f":violet[{e.get('tech', 'Non assigné')}]"
             else:
                 style_m = f":green[**✅ {e['id']}**]"
-                couleur_tech = str(e.get('tech', 'Non assigné'))
             
             col_m, col_t, col_p = st.columns([1, 1, 3])
             col_m.markdown(style_m)
-            col_t.caption(f"Tech: {couleur_tech}")
+            col_t.caption(f"Tech: {e.get('tech', 'Non assigné')}")
             col_p.progress(pourcentage, text=f"Fin prévue: {e.get('fin_prevue')}")
-            
-            if commentaire and commentaire.strip():
-                if est_bloque:
-                    st.error(f"🛑 Blocage {e['id']}: {commentaire}")
-                elif est_retard_reel:
-                    st.warning(f"⚠️ Retard {e['id']}: {commentaire}")
-                elif est_alerte_proche:
-                    st.info(f"⏳ Alerte {e['id']}: {commentaire}")
-            
             st.divider()
     else:
         st.info("Aucune intervention en cours.")
 
-    # 4. TABLEAU RÉCAPITULATIF & EXPORT GANTT
-    st.subheader("Détail du Planning")
-    
-    equipements_actifs_tries = sorted(
-        [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
-        key=lambda x: str(x.get("id", ""))
-    )
-    
-    data_to_display = []
-    for e in equipements_actifs_tries:
-        date_fin = datetime.datetime.strptime(e.get("fin_prevue"), '%Y-%m-%d').date()
-        delta = (date_fin - aujourdhui).days
-        jours_restants = max(0, delta)
-        
-        data_to_display.append({
-            "Machine": e.get("id"),
-            "Statut": e.get("statut"),
-            "Technicien": e.get("tech"),
-            "Début": e.get("debut"),
-            "Fin prévue": e.get("fin_prevue"),
-            "Jours restants": jours_restants,
-            "Info Arrêt/Retard": e.get("cause_arret") or e.get("commentaire_retard") or "-"
-        })
-    
-    if data_to_display:
-        df = pd.DataFrame(data_to_display)
-        st.dataframe(
-            df, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Jours restants": st.column_config.NumberColumn(format="%d jours")
-            }
-        )
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Télécharger le planning (CSV)", csv, "planning.csv", "text/csv")
-    else:
-        st.write("Aucune machine en cours de production.")
-
-    st.divider()
-    st.subheader("📊 Export Graphique de Gantt Personnalisé")
-
-    if st.button("Générer le Gantt pro (.html)"):
-        if equipements:
-            equipements_tries = sorted(
-                [e for e in equipements if e.get("statut") in ["Actif", "Bloqué", "Terminé"]],
-                key=lambda x: str(x.get("id", ""))
-            )
-            
-            df_gantt = []
-            for e in equipements_tries:
-                df_gantt.append(dict(
-                    Machine=str(e.get("id")),
-                    Debut=str(e.get("debut")),
-                    Fin=str(e.get("fin_prevue")),
-                    Technicien=str(e.get("tech", "Non assigné")),
-                    Statut=str(e.get("statut"))
-                ))
-            
-            if df_gantt:
-                df_plot = pd.DataFrame(df_gantt)
-                liste_machines_ordonnees = df_plot["Machine"].tolist()
-                
-                liste_techs = st.session_state.data.get("techniciens", ["Thomas", "Lucas"])
-                couleurs_palette = ["#2b5c8f", "#e67e22", "#27ae60", "#8e44ad", "#e74c3c", "#34495e"]
-                color_map = {tech: couleurs_palette[i % len(couleurs_palette)] for i, tech in enumerate(liste_techs)}
-                color_map["Non assigné"] = "#95a5a6"
-                
-                fig = px.timeline(
-                    df_plot, 
-                    x_start="Debut", 
-                    x_end="Fin", 
-                    y="Machine", 
-                    color="Technicien",
-                    color_discrete_map=color_map,
-                    hover_data=["Statut"],
-                    title="Planning de Production - Atelier Focal One"
-                )
-                
-                fig.update_layout(
-                    yaxis=dict(
-                        categoryorder="array",
-                        categoryarray=liste_machines_ordonnees, 
-                        autorange="reversed"
-                    ),
-                    xaxis=dict(
-                        title="Chronologie",
-                        type="date"
-                    ),
-                    plot_bgcolor="#f8f9fa",
-                    paper_bgcolor="#ffffff",
-                    font=dict(family="Arial, sans-serif", size=12),
-                    title_font=dict(size=18, color="#2c3e50"),
-                    legend_title_text="Techniciens"
-                )
-                
-                bandeau_html = ""
-                bandeau_path = os.path.join(BASE_DIR, 'fond_bandeau.jpg')
-                if os.path.exists(bandeau_path):
-                    with open(bandeau_path, "rb") as img_file:
-                        encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
-                        bandeau_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/jpeg;base64,{encoded_img}" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;"></div>'
-
-                html_content = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>Planning de Production - Focal One</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f9; color: #333; }}
-                        .container {{ max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
-                        h1 {{ color: #2c3e50; text-align: center; margin-bottom: 25px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        {bandeau_html}
-                        <h1>Planning de Production - Vue Gantt</h1>
-                        {fig.to_html(full_html=False, include_plotlyjs='cdn')}
-                    </div>
-                </body>
-                </html>
-                """
-                
-                st.download_button(
-                    label="📥 Télécharger le Gantt pro (.html)",
-                    data=html_content,
-                    file_name=f"gantt_pro_atelier_{datetime.date.today()}.html",
-                    mime="text/html"
-                )
-                st.success("Gantt pro généré avec succès !")
-            else:
-                st.warning("Pas assez de données pour générer le diagramme.")
-        else:
-            st.info("Aucune machine enregistrée.")
-
 # 1. HISTORIQUE & ADMINISTRATION
 with tabs[1]:
     st.subheader("⚠️ Administration")
-    
     with st.expander("Gestion de la base (Admin)"):
         mdp = st.text_input("Mot de passe administrateur", type="password", key="mdp_admin")
-        
         if st.button("Remise à zéro avec sauvegarde"):
             if mdp == "TonMotDePasse":
-                archive_dir = os.path.join(BASE_DIR, "Archives")
-                if not os.path.exists(archive_dir):
-                    os.makedirs(archive_dir)
-                
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_path = os.path.join(archive_dir, f"backup_{timestamp}.json")
-                shutil.copy(DATA_FILE, backup_path)
-                
-                st.session_state.data = {
-                    "techniciens": ["Thomas", "Lucas"], 
-                    "equipements": [], 
-                    "absences": [],
-                    "manquants": []
-                }
+                st.session_state.data = {"techniciens": ["Thomas", "Lucas"], "equipements": [], "absences": [], "manquants": []}
                 save_data()
-                st.success("Base archivée et réinitialisée avec succès !")
+                st.success("Réinitialisé !")
                 st.rerun()
-            elif mdp:
-                st.error("Mot de passe incorrect")
 
-    st.divider()
-
-    st.subheader("Historique des interventions")
-    terminees = sorted(
-        [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"],
-        key=lambda x: str(x.get("id", ""))
-    )
-    
-    if not terminees:
-        st.info("Aucune intervention terminée.")
-    else:
-        for e in terminees:
-            date_fin_affiche = e.get("fin_reelle", e.get("fin_prevue", "N/A"))
-            st.write(f"✅ **{e['id']}** | Fin réelle : {date_fin_affiche}")
-
-# 2. PLANNING (Gestion & Modification)
+# 2. PLANNING
 with tabs[2]:
     st.subheader("Planification et Suivi")
-    
-    def calculer_fin_avec_contraintes(date_debut_cal, duree_jours, tech_cible, equipements_actuels, absences_actuelles, ignore_eq_id=None):
-        current_date = date_debut_cal
-        
-        def est_disponible(d_test):
-            if d_test.weekday() >= 5: return False
-            for abs_item in absences_actuelles:
-                if abs_item["tech"] == tech_cible:
-                    d_deb_abs = datetime.datetime.strptime(abs_item["debut"], '%Y-%m-%d').date()
-                    d_fin_abs = datetime.datetime.strptime(abs_item["fin"], '%Y-%m-%d').date()
-                    if d_deb_abs <= d_test <= d_fin_abs:
-                        return False
-            for e_item in equipements_actuels:
-                if e_item.get("tech") == tech_cible and e_item.get("statut") in ["Actif", "Bloqué"]:
-                    if ignore_eq_id and e_item.get("id") == ignore_eq_id:
-                        continue
-                    d_deb_eq = datetime.datetime.strptime(e_item["debut"], '%Y-%m-%d').date()
-                    d_fin_eq = datetime.datetime.strptime(e_item["fin_prevue"], '%Y-%m-%d').date()
-                    if d_deb_eq <= d_test <= d_fin_eq:
-                        return False
-            return True
-
-        while not est_disponible(current_date):
-            current_date += datetime.timedelta(days=1)
-            
-        date_reelle_debut = current_date
-        jours_restants = int(duree_jours)
-        date_actuelle = date_reelle_debut
-        
-        while jours_restants > 0:
-            if est_disponible(date_actuelle):
-                jours_restants -= 1
-            if jours_restants > 0:
-                date_actuelle += datetime.timedelta(days=1)
-                
-        return date_reelle_debut, date_actuelle
-
     with st.form("ajout_machine", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         nom = c1.text_input("Nom de la machine (ou OF)")
@@ -437,191 +203,28 @@ with tabs[2]:
         duree = c3.number_input("Durée prévue (jours)", min_value=1, value=14)
         
         if st.form_submit_button("Ajouter à la production"):
-            absences = st.session_state.data.get("absences", [])
-            equipements = st.session_state.data.get("equipements", [])
-            
-            d_reelle, d_fin = calculer_fin_avec_contraintes(date_debut, int(duree), tech, equipements, absences)
-            
             st.session_state.data["equipements"].append({
-                "id": nom, 
-                "tech": tech, 
-                "statut": "Actif",
-                "debut": str(d_reelle),
-                "fin_prevue": str(d_fin),
+                "id": nom, "tech": tech, "statut": "Actif",
+                "debut": str(date_debut),
+                "fin_prevue": str(date_debut + datetime.timedelta(days=int(duree))),
                 "duree_jours": int(duree)
             })
             save_data()
-            st.success(f"Planifié : {d_reelle} au {d_fin}")
+            st.success("Ajouté !")
             st.rerun()
-
-    st.subheader("Modifier / Ajuster une machine")
-    machines_actives_tries = sorted(
-        [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
-        key=lambda x: str(x.get("id", ""))
-    )
-    
-    if machines_actives_tries:
-        machine_id = st.selectbox("Choisir une machine", [e['id'] for e in machines_actives_tries])
-        machine_concernee = next((e for e in st.session_state.data["equipements"] if e['id'] == machine_id), None)
-
-        if machine_concernee:
-            nouveau_statut = st.selectbox("Statut", ["Actif", "Bloqué", "Terminé"], index=["Actif", "Bloqué", "Terminé"].index(machine_concernee.get("statut", "Actif")))
-            date_fin_actuelle = datetime.datetime.strptime(machine_concernee.get('fin_prevue'), '%Y-%m-%d').date()
-            nouvelle_fin = st.date_input("Ajuster la date de fin prévue", value=date_fin_actuelle)
-            commentaire = st.text_input("Motif du décalage / Commentaire", value=machine_concernee.get("commentaire_retard", ""))
-            
-            if st.button("Enregistrer les modifications"):
-                machine_concernee["statut"] = nouveau_statut
-                machine_concernee["fin_prevue"] = nouvelle_fin.strftime('%Y-%m-%d')
-                machine_concernee["commentaire_retard"] = commentaire
-                
-                d_deb = datetime.datetime.strptime(machine_concernee["debut"], '%Y-%m-%d').date()
-                d_fin = nouvelle_fin
-                temp_d = d_deb
-                nouvelle_duree = 0
-                while temp_d <= d_fin:
-                    if temp_d.weekday() < 5:
-                        nouvelle_duree += 1
-                    temp_d += datetime.timedelta(days=1)
-                machine_concernee["duree_jours"] = max(1, nouvelle_duree)
-                
-                save_data()
-                st.success(f"La machine {machine_id} a été mise à jour avec succès !")
-                st.rerun()
-    else:
-        st.info("Aucune machine active à modifier.")
-
-    st.divider()
-
-    # SECTION REPLANIFICATION EN CASCADE
-    st.subheader("🔄 Replanification en cascade par Technicien")
-    st.markdown("Réajuste automatiquement toutes les machines suivantes de ce technicien.")
-    
-    col_tech_casc, col_btn_casc = st.columns([2, 1])
-    tech_a_replanifier = col_tech_casc.selectbox("Technicien concerné", st.session_state.data["techniciens"], key="tech_cascade")
-    
-    if col_btn_casc.button("⚡ Lancer la cascade"):
-        machines_tech = sorted(
-            [e for e in st.session_state.data["equipements"] if e.get("tech") == tech_a_replanifier and e.get("statut") in ["Actif", "Bloqué"]],
-            key=lambda x: x["debut"]
-        )
-        
-        if len(machines_tech) > 0:
-            absences = st.session_state.data.get("absences", [])
-            equipements = st.session_state.data.get("equipements", [])
-            modifications_faites = 0
-            
-            derniere_fin_connue = None
-            for i, machine in enumerate(machines_tech):
-                duree_ouvree = machine.get("duree_jours", 14)
-                d_deb_orig = datetime.datetime.strptime(machine["debut"], '%Y-%m-%d').date()
-                
-                if i == 0:
-                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(d_deb_orig, duree_ouvree, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
-                else:
-                    prochain_jour_possible = derniere_fin_connue + datetime.timedelta(days=1)
-                    nouveau_deb, nouvelle_fin = calculer_fin_avec_contraintes(prochain_jour_possible, duree_ouvree, tech_a_replanifier, equipements, absences, ignore_eq_id=machine["id"])
-                
-                if machine["debut"] != str(nouveau_deb) or machine["fin_prevue"] != str(nouvelle_fin):
-                    machine["debut"] = str(nouveau_deb)
-                    machine["fin_prevue"] = str(nouvelle_fin)
-                    modifications_faites += 1
-                
-                derniere_fin_connue = datetime.datetime.strptime(machine["fin_prevue"], '%Y-%m-%d').date()
-            
-            save_data()
-            if modifications_faites > 0:
-                st.success(f"Cascade exécutée ! {modifications_faites} machine(s) replanifiée(s).")
-                st.rerun()
-            else:
-                st.info("Le planning est déjà parfaitement aligné.")
-        else:
-            st.info("Pas assez de machines en cours pour ce technicien.")
-            
-    st.divider()
-    
-    # Affichage des actions rapides par machine active
-    equipements_tries = sorted(
-        enumerate(st.session_state.data["equipements"]), 
-        key=lambda x: str(x[1].get("id", ""))
-    )
-
-    for i, e in equipements_tries:
-        if e.get("statut") in ["Actif", "Bloqué"]:
-            m_id = e.get("id", "sans_nom")
-            unique_key = f"{m_id}_{i}"
-            
-            cols = st.columns([2, 1, 1, 1, 0.5]) 
-            cols[0].write(f"**{m_id}** ({e.get('statut')})")
-            cols[0].caption(f"Tech: {e.get('tech')} | {e.get('debut')} ➔ {e.get('fin_prevue')}")
-            
-            if e["statut"] == "Actif":
-                with cols[1].popover("🛑 STOP"):
-                    cause = st.text_input("Raison de l'arrêt", key=f"cause_{unique_key}")
-                    if st.button("Confirmer arrêt", key=f"stop_{unique_key}"):
-                        if cause:
-                            e["statut"] = "Bloqué"
-                            e["cause_arret"] = cause
-                            save_data(); st.rerun()
-                        else:
-                            st.error("Veuillez saisir une raison.")
-            else:
-                if cols[1].button("▶️ Reprise", key=f"rep_{unique_key}"):
-                    e["statut"] = "Actif"
-                    e.pop("cause_arret", None)
-                    save_data(); st.rerun()
-            
-            with cols[2].popover("⏱️ Retard"):
-                nb_jours = st.number_input("Jours de report", min_value=1, value=1, key=f"duree_{unique_key}")
-                raison_retard = st.text_input("Raison du retard", key=f"raison_{unique_key}")
-                if st.button("Confirmer retard", key=f"retard_{unique_key}"):
-                    date_actuelle = datetime.datetime.strptime(e["fin_prevue"], '%Y-%m-%d').date()
-                    e["fin_prevue"] = str(date_actuelle + datetime.timedelta(days=nb_jours))
-                    e["commentaire_retard"] = raison_retard
-                    save_data(); st.rerun()
-            
-            if cols[3].button("✅", key=f"term_{unique_key}", help="Marquer comme terminé"):
-                e["statut"] = "Terminé"
-                e["fin_reelle"] = str(datetime.date.today())
-                save_data(); st.rerun()
-
-            if cols[4].button("🗑️", key=f"del_{unique_key}", help="Supprimer cette machine"):
-                del st.session_state.data["equipements"][i]
-                save_data()
-                st.rerun()
 
 # 3. CONGÉS
 with tabs[3]:
     st.subheader("Gestion des absences")
-    
     if "absences" not in st.session_state.data:
         st.session_state.data["absences"] = []
-    
     with st.form("ajout_absence", clear_on_submit=True):
         col1, col2 = st.columns(2)
         tech = col1.selectbox("Technicien", st.session_state.data["techniciens"])
         date_deb = col2.date_input("Date de début")
         date_fin = col2.date_input("Date de fin")
-        
         if st.form_submit_button("Enregistrer absence"):
-            if date_fin >= date_deb:
-                st.session_state.data["absences"].append({
-                    "tech": tech, 
-                    "debut": str(date_deb),
-                    "fin": str(date_fin)
-                })
-                save_data()
-                st.success("Absence enregistrée !")
-                st.rerun()
-            else:
-                st.error("La date de fin doit être après la date de début.")
-
-    st.divider()
-    for i, abs_item in enumerate(st.session_state.data["absences"]):
-        col1, col2 = st.columns([3, 1])
-        col1.write(f"📅 **{abs_item['tech']}** : du {abs_item['debut']} au {abs_item['fin']}")
-        if col2.button("Suppr", key=f"del_abs_{i}"):
-            st.session_state.data["absences"].pop(i)
+            st.session_state.data["absences"].append({"tech": tech, "debut": str(date_deb), "fin": str(date_fin)})
             save_data()
             st.rerun()
 
@@ -635,21 +238,18 @@ with tabs[4]:
             st.session_state.data["techniciens"].remove(t)
             save_data()
             st.rerun()
-    
     new_t = st.text_input("Ajouter technicien")
-    if st.button("Ajouter"):
-        if new_t:
-            st.session_state.data["techniciens"].append(new_t)
-            save_data()
-            st.rerun()
+    if st.button("Ajouter") and new_t:
+        st.session_state.data["techniciens"].append(new_t)
+        save_data()
+        st.rerun()
 
 # 5. ANALYSE DES PERFORMANCES ET MANQUANTS
 with tabs[5]:
     st.subheader("Pilotage, Performance & Suivi des Manquants")
     
-    # Section Import fichier Manquants (CSV ou Excel)
     with st.expander("📥 Importer la liste des pièces manquantes (par OF)"):
-        st.markdown("Le fichier doit contenir au minimum les colonnes : **OF** (ou Machine), **Article** (ou Désignation), et **Quantité**.")
+        st.markdown("Le fichier doit contenir au minimum les colonnes : **OF**, **Article**, et **Quantité**.")
         uploaded_manquants = st.file_uploader("Fichier de manquants", type=["csv", "xlsx", "xls"], key="file_manquants")
         
         if uploaded_manquants is not None:
@@ -658,32 +258,24 @@ with tabs[5]:
                     df_m = pd.read_csv(uploaded_manquants)
                 else:
                     df_m = pd.read_excel(uploaded_manquants)
-                
-                # Normalisation basique des noms de colonnes potentiels
                 df_m.columns = [str(c).strip().lower() for c in df_m.columns]
-                
-                # Convertir en dictionnaires pour stockage JSON
-                records = df_m.to_dict(orient="records")
-                st.session_state.data["manquants"] = records
+                st.session_state.data["manquants"] = df_m.to_dict(orient="records")
                 save_data()
-                st.success(f"Liste des manquants importée avec succès ({len(records)} lignes) !")
+                st.success(f"Liste importée ({len(df_m)} lignes) !")
+                st.rerun()
             except Exception as ex:
-                st.error(f"Erreur lors de la lecture du fichier : {ex}")
+                st.error(f"Erreur : {ex}")
 
     st.divider()
 
-    # Analyse des manquants
     manquants_data = st.session_state.data.get("manquants", [])
     
     if manquants_data:
         df_manq = pd.DataFrame(manquants_data)
-        
-        # Tentative de détection dynamique des colonnes clés
         cols_lower = df_manq.columns.tolist()
         col_of = next((c for c in cols_lower if 'of' in c or 'machine' in c or 'ordre' in c), cols_lower[0])
         col_article = next((c for c in cols_lower if 'article' in c or 'designation' in c or 'piece' in c), cols_lower[1] if len(cols_lower)>1 else cols_lower[0])
         
-        # Calculs clés
         total_lignes_manquants = len(df_manq)
         nb_of_concernes = df_manq[col_of].nunique() if col_of in df_manq.columns else 1
         moyenne_manquants_par_of = total_lignes_manquants / nb_of_concernes if nb_of_concernes > 0 else 0
@@ -706,85 +298,4 @@ with tabs[5]:
         
         st.divider()
     else:
-        st.info("💡 Importe un fichier de manquants via l'encart ci-dessus pour afficher les statistiques et le Top 3.")
-
-    # Performances de production classiques
-    equipements = st.session_state.data.get("equipements", [])
-    terminees = [e for e in equipements if e.get("statut") == "Terminé" and e.get("fin_reelle")]
-    
-    if terminees:
-        ecarts = []
-        lead_times = []
-        respectes = 0
-        
-        for e in terminees:
-            d_debut = datetime.datetime.strptime(e["debut"], '%Y-%m-%d').date()
-            d_reelle = datetime.datetime.strptime(e["fin_reelle"], '%Y-%m-%d').date()
-            d_prevue = datetime.datetime.strptime(e["fin_prevue"], '%Y-%m-%d').date()
-            
-            lead_times.append((d_reelle - d_debut).days + 1)
-            diff = (d_prevue - d_reelle).days
-            ecarts.append(diff)
-            if diff >= 0: respectes += 1
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Respect délais global", f"{(respectes / len(terminees)) * 100:.0f}%")
-        
-        moyen_ecart = sum(ecarts)/len(ecarts)
-        libelle_ecart = "Avance moy." if moyen_ecart >= 0 else "Retard moy."
-        valeur_affichee = moyen_ecart if moyen_ecart >= 0 else -moyen_ecart
-        col2.metric(libelle_ecart, f"{valeur_affichee:.1f} j")
-        
-        col3.metric("Lead Time moy.", f"{sum(lead_times)/len(lead_times):.1f} j")
-        col4.metric("Interventions", len(terminees))
-        
-        st.divider()
-
-        df_perf = pd.DataFrame({
-            "Machine": [e["id"] for e in terminees],
-            "Écart (j) (+ avance / - retard)": ecarts,
-            "Lead Time (j)": lead_times
-        }).set_index("Machine")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.write("### Écarts (Avance vs Retard en jours)")
-            couleur_ecart = "#00cc96" if moyen_ecart >= 0 else "#ff4b4b"
-            st.bar_chart(df_perf["Écart (j) (+ avance / - retard)"], color=couleur_ecart)
-        with c2:
-            st.write("### Lead Time par machine")
-            st.bar_chart(df_perf["Lead Time (j)"], color="#3385ff")
-
-        st.divider()
-
-        c_stop, c_retard = st.columns(2)
-        
-        with c_stop:
-            st.write("### 🛑 Top 3 Blocages (Arrêts de production)")
-            bloquees = [e for e in equipements if e.get("cause_arret")]
-            if bloquees:
-                causes = Counter([e["cause_arret"] for e in bloquees]).most_common(3)
-                col_podium = st.columns(3)
-                medailles = ["🥇", "🥈", "🥉"]
-                for i, (cause, count) in enumerate(causes):
-                    with col_podium[i]:
-                        st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[i]}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; font-size: 12px; font-weight: bold;'>{cause}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; color: #ffa500;'>{count}x</div>", unsafe_allow_html=True)
-            else:
-                st.write("Aucun blocage enregistré.")
-
-        with c_retard:
-            st.write("### ⏱️ Top 3 Retards (Finitions)")
-            retards = [e for e in terminees if e.get("commentaire_retard")]
-            if retards:
-                causes_retard = Counter([e["commentaire_retard"] for e in retards]).most_common(3)
-                col_podium_retard = st.columns(3)
-                medailles = ["🥇", "🥈", "🥉"]
-                for i, (cause, count) in enumerate(causes_retard):
-                    with col_podium_retard[i]:
-                        st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[i]}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; font-size: 12px; font-weight: bold;'>{cause}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; color: #ff4b4b;'>{count}x</div>", unsafe_allow_html=True)
-            else:
-                st.write("Aucun retard enregistré.")
+        st.info("💡 Importe un fichier de manquants ci-dessus pour afficher les statistiques.")
