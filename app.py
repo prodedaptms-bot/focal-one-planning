@@ -131,7 +131,7 @@ with tabs[0]:
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
-    c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut"] == "Bloqué"]))
+    c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
     c3.metric("⚠️ En retard", len([e for e in en_cours if pd.to_datetime(e.get("fin_prevue")).date() < aujourdhui]))
     c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
     
