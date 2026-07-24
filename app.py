@@ -106,43 +106,42 @@ with tabs[0]:
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
-    c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut") == "Bloqué"]))
+    c2.metric("🛑 Bloquées", len([e for e in en_cours if e.get("statut"] == "Bloqué"]))
     c3.metric("⚠️ En retard", len([e for e in en_cours if pd.to_datetime(e.get("fin_prevue")).date() < aujourdhui]))
-    c4.metric("Terminées", len([e for e in equipements if e.get("statut") == "Terminé"]))
+    c4.metric("Terminées", len([e for e in equipements if e.get("statut"] == "Terminé"]))
     
     st.divider()
 
-    # --- BOUTON / SECTION GANTT SUR LE DASHBOARD ---
-    with st.expander("📊 Afficher le Diagramme de Gantt de la production", expanded=False):
-        if en_cours:
-            data_gantt = []
-            for e in en_cours:
-                data_gantt.append({
-                    "Task": e.get("id"),
-                    "Start": e.get("debut"),
-                    "Finish": e.get("fin_prevue"),
-                    "Technicien": e.get("tech", "Non assigné"),
-                    "Statut": e.get("statut")
-                })
-            df_gantt = pd.DataFrame(data_gantt)
-            try:
-                import plotly.express as px
-                fig = px.timeline(
-                    df_gantt, 
-                    x_start="Start", 
-                    x_end="Finish", 
-                    y="Task", 
-                    color="Technicien",
-                    hover_data=["Statut"],
-                    title="Planning de Gantt des interventions en cours"
-                )
-                fig.update_yaxes(categoryorder="total ascending")
-                st.plotly_chart(fig, use_container_width=True)
-            except Exception as ex:
-                st.info("Module Plotly non disponible, affichage du tableau de Gantt brut :")
-                st.dataframe(df_gantt, use_container_width=True, hide_index=True)
-        else:
-            st.info("Aucune donnée à afficher dans le Gantt (pas de machine en cours).")
+    # --- SECTION GANTT DIRECTEMENT VISIBLE SUR LE DASHBOARD ---
+    st.subheader("📊 Planning de Gantt de la production")
+    if en_cours:
+        data_gantt = []
+        for e in en_cours:
+            data_gantt.append({
+                "Task": e.get("id"),
+                "Start": e.get("debut"),
+                "Finish": e.get("fin_prevue"),
+                "Technicien": e.get("tech", "Non assigné"),
+                "Statut": e.get("statut")
+            })
+        df_gantt = pd.DataFrame(data_gantt)
+        try:
+            import plotly.express as px
+            fig = px.timeline(
+                df_gantt, 
+                x_start="Start", 
+                x_end="Finish", 
+                y="Task", 
+                color="Technicien",
+                hover_data=["Statut"]
+            )
+            fig.update_yaxes(categoryorder="total ascending")
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as ex:
+            st.info("Module Plotly non disponible, affichage du tableau de Gantt brut :")
+            st.dataframe(df_gantt, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aucune donnée à afficher dans le Gantt (pas de machine en cours).")
 
     st.divider()
 
@@ -268,7 +267,7 @@ with tabs[1]:
 
     st.divider()
     st.subheader("Historique des interventions terminées")
-    terminees = [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"]
+    terminees = [e for e in st.session_state.data["equipements"] if e.get("statut"] == "Terminé"]
     if not terminees:
         st.info("Aucune intervention terminée.")
     else:
@@ -297,7 +296,7 @@ with tabs[2]:
                         if datetime.datetime.strptime(abs["debut"], '%Y-%m-%d').date() <= date_test <= datetime.datetime.strptime(abs["fin"], '%Y-%m-%d').date():
                             return False
                 for e in equipements:
-                    if e.get("tech") == tech_cible and e.get("statut") == "Actif":
+                    if e.get("tech") == tech_cible and e.get("statut"] == "Actif":
                         d_debut = datetime.datetime.strptime(e["debut"], '%Y-%m-%d').date()
                         d_fin = datetime.datetime.strptime(e["fin_prevue"], '%Y-%m-%d').date()
                         if d_debut <= date_test <= d_fin: return False
@@ -480,7 +479,7 @@ with tabs[5]:
     st.subheader("Pilotage et Performance Globale")
     
     equipements = st.session_state.data.get("equipements", [])
-    terminees = [e for e in equipements if e.get("statut") == "Terminé" and e.get("fin_reelle")]
+    terminees = [e for e in equipements if e.get("statut"] == "Terminé" and e.get("fin_reelle")]
     
     if not terminees:
         st.info("Terminez quelques interventions pour voir apparaître les indicateurs.")
