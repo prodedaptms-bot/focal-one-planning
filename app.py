@@ -267,7 +267,7 @@ with tabs[1]:
 
     st.divider()
     st.subheader("Historique des interventions terminées")
-    terminees = [e for e in st.session_state.data["equipements"] if e.get("statut"] == "Terminé"]
+    terminees = [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"]
     if not terminees:
         st.info("Aucune intervention terminée.")
     else:
