@@ -26,7 +26,7 @@ def load_data():
             "techniciens": ["Thomas", "Lucas"], 
             "equipements": [], 
             "absences": [],
-            "manquants": [] # Ajout de la structure pour les manquants
+            "manquants": []
         }
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f: 
@@ -65,7 +65,7 @@ tabs = st.tabs([
     "Congés", 
     "Équipe", 
     "Analyse des performances",
-    "Analyse des manquants"  # <-- Nouvel Onglet 7
+    "Analyse des manquants"
 ])
 
 # 0. DASHBOARD
@@ -101,6 +101,8 @@ with tabs[0]:
         st.divider()
 
     en_cours = [e for e in equipements if e.get("statut") not in ["Terminé", "Annulé"]]
+    # Tri chronologique des machines en cours par date de début
+    en_cours = sorted(en_cours, key=lambda x: x.get("debut", ""))
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("En cours", len(en_cours))
@@ -110,7 +112,7 @@ with tabs[0]:
     
     st.divider()
 
-    st.write("### 📅 Suivi Visuel des Machines")
+    st.write("### 📅 Suivi Visuel des Machines (Tri chronologique)")
     
     if en_cours:
         for e in en_cours:
@@ -144,7 +146,7 @@ with tabs[0]:
             col_m, col_t, col_p = st.columns([1, 1, 3])
             col_m.markdown(style_m)
             col_t.caption(f"Tech: {couleur_tech}")
-            col_p.progress(pourcentage, text=f"Fin prévue: {e.get('fin_prevue')}")
+            col_p.progress(pourcentage, text=f"Début: {e.get('debut')} ➔ Fin prévue: {e.get('fin_prevue')}")
             
             if commentaire and commentaire.strip():
                 if est_bloque:
@@ -160,7 +162,9 @@ with tabs[0]:
 
     st.subheader("Détail du Planning")
     data_to_display = []
-    for e in st.session_state.data["equipements"]:
+    # Tri chronologique pour le tableau également
+    equipements_tries = sorted(st.session_state.data["equipements"], key=lambda x: x.get("debut", ""))
+    for e in equipements_tries:
         if e.get("statut") in ["Actif", "Bloqué"]:
             date_fin = datetime.datetime.strptime(e.get("fin_prevue"), '%Y-%m-%d').date()
             delta = (date_fin - aujourdhui).days
@@ -184,12 +188,37 @@ with tabs[0]:
     else:
         st.write("Aucune machine en cours de production.")
 
-# 1. HISTORIQUE
+# 1. HISTORIQUE & ADMINISTRATION (Sauvegarde, Import & RAZ)
 with tabs[1]:
-    st.subheader("⚠️ Administration")
-    with st.expander("Gestion de la base (Admin)"):
+    st.subheader("⚠️ Administration & Sauvegarde de la Base")
+    
+    # Sauvegarde et Import Global
+    col_dl, col_up = st.columns(2)
+    with col_dl:
+        json_data = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
+        st.download_button(
+            label="💾 Télécharger la sauvegarde complète (JSON)",
+            data=json_data,
+            file_name=f"sauvegarde_atelier_{datetime.date.today().strftime('%Y%m%d')}.json",
+            mime="application/json"
+        )
+    with col_up:
+        uploaded_backup = st.file_uploader("Restaurer une sauvegarde (JSON)", type=["json"])
+        if uploaded_backup is not None:
+            try:
+                restored_data = json.load(uploaded_backup)
+                st.session_state.data = restored_data
+                save_data()
+                st.success("Base de données restaurée avec succès !")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur lors de la restauration : {e}")
+
+    st.divider()
+
+    with st.expander("Gestion avancée / Remise à zéro"):
         mdp = st.text_input("Mot de passe administrateur", type="password", key="mdp_admin")
-        if st.button("Remise à zéro avec sauvegarde"):
+        if st.button("Remise à zéro avec sauvegarde automatique"):
             if mdp == "TonMotDePasse":
                 archive_dir = os.path.join(BASE_DIR, "Archives")
                 if not os.path.exists(archive_dir): os.makedirs(archive_dir)
@@ -205,14 +234,14 @@ with tabs[1]:
                 st.error("Mot de passe incorrect")
 
     st.divider()
-    st.subheader("Historique des interventions")
+    st.subheader("Historique des interventions terminées")
     terminees = [e for e in st.session_state.data["equipements"] if e.get("statut") == "Terminé"]
     if not terminees:
         st.info("Aucune intervention terminée.")
     else:
         for e in terminees:
             date_fin_affiche = e.get("fin_reelle", e.get("fin_prevue", "N/A"))
-            st.write(f"✅ **{e['id']}** | Fin réelle : {date_fin_affiche}")
+            st.write(f"✅ **{e['id']}** | Technicien : {e.get('tech')} | Fin réelle : {date_fin_affiche}")
 
 # 2. PLANNING
 with tabs[2]:
@@ -331,6 +360,12 @@ with tabs[2]:
             st.info("Pas assez de machines en cours pour ce technicien.")
     st.divider()
     
+    # Affichage trié chronologiquement pour la gestion des actions rapides
+    equipements_actives_triees = sorted(
+        [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
+        key=lambda x: x.get("debut", "")
+    )
+    
     for i, e in enumerate(st.session_state.data["equipements"]):
         if e.get("statut") in ["Actif", "Bloqué"]:
             m_id = e.get("id", "sans_nom")
@@ -394,6 +429,7 @@ with tabs[3]:
 
 # 4. ÉQUIPE
 with tabs[4]:
+    st.subheader("Gestion de l'équipe technique")
     for i, t in enumerate(list(st.session_state.data["techniciens"])):
         col1, col2 = st.columns([3, 1])
         col1.write(t)
@@ -410,7 +446,6 @@ with tabs[4]:
 # 5. ANALYSE DES PERFORMANCES
 with tabs[5]:
     st.subheader("Pilotage et Performance Globale")
-    from collections import Counter
     
     equipements = st.session_state.data.get("equipements", [])
     terminees = [e for e in equipements if e.get("statut") == "Terminé" and e.get("fin_reelle")]
@@ -445,7 +480,6 @@ with tabs[5]:
         with c2:
             st.write("### Lead Time par machine")
             st.bar_chart(df["Lead Time (j)"], color="#3385ff")
-
 
 # 6. ANALYSE DES MANQUANTS (ONGLET 7)
 with tabs[6]:
