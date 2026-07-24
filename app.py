@@ -112,7 +112,7 @@ with tabs[0]:
     
     st.divider()
 
-    # --- SECTION GANTT DIRECTEMENT VISIBLE SUR LE DASHBOARD ---
+    # --- SECTION GANTT AVEC QUADRILLAGE ---
     st.subheader("📊 Planning de Gantt de la production")
     if en_cours:
         data_gantt = []
@@ -136,6 +136,11 @@ with tabs[0]:
                 hover_data=["Statut"]
             )
             fig.update_yaxes(categoryorder="total ascending")
+            
+            # Ajout du quadrillage en arrière-plan
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
+            
             st.plotly_chart(fig, use_container_width=True)
         except Exception as ex:
             st.info("Module Plotly non disponible, affichage du tableau de Gantt brut :")
@@ -195,7 +200,6 @@ with tabs[0]:
 
     st.subheader("Détail du Planning")
     data_to_display = []
-    # Tri chronologique pour le tableau également
     equipements_tries = sorted(st.session_state.data["equipements"], key=lambda x: x.get("debut", ""))
     for e in equipements_tries:
         if e.get("statut") in ["Actif", "Bloqué"]:
@@ -391,11 +395,6 @@ with tabs[2]:
         else:
             st.info("Pas assez de machines en cours pour ce technicien.")
     st.divider()
-    
-    equipements_actives_triees = sorted(
-        [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
-        key=lambda x: x.get("debut", "")
-    )
     
     for i, e in enumerate(st.session_state.data["equipements"]):
         if e.get("statut") in ["Actif", "Bloqué"]:
