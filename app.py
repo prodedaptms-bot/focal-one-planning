@@ -296,7 +296,7 @@ with tabs[2]:
                         if datetime.datetime.strptime(abs["debut"], '%Y-%m-%d').date() <= date_test <= datetime.datetime.strptime(abs["fin"], '%Y-%m-%d').date():
                             return False
                 for e in equipements:
-                    if e.get("tech") == tech_cible and e.get("statut"] == "Actif":
+                    if e.get("tech") == tech_cible and e.get("statut") == "Actif":
                         d_debut = datetime.datetime.strptime(e["debut"], '%Y-%m-%d').date()
                         d_fin = datetime.datetime.strptime(e["fin_prevue"], '%Y-%m-%d').date()
                         if d_debut <= date_test <= d_fin: return False
