@@ -462,8 +462,6 @@ with tabs[6]:
             else:
                 df_manquants_upl = pd.read_excel(uploaded_file)
             
-            # Normalisation des colonnes attendues (Code OF, Reference, Designation, Quantite/Manquant)
-            # On s'attend à des colonnes comme: ['Code OF', 'Référence', 'Désignation', 'Quantité Manquante']
             st.session_state.data["manquants"] = df_manquants_upl.to_dict(orient="records")
             save_data()
             st.success("Fichier des manquants importé avec succès !")
@@ -487,50 +485,52 @@ with tabs[6]:
     else:
         df_manq = pd.DataFrame(manquants_data)
         
-        # Identification automatique ou flexible des colonnes numériques de quantité manquante et d'OF
-        # On essaie de repérer une colonne de quantité et une colonne d'OF
+        # --- Détection automatique robuste des colonnes de ton fichier ---
         cols_lower = {c.lower(): c for c in df_manq.columns}
         
-        # Recherche d'une colonne de quantité/nombre de manquants
-        col_qte_候选 = [c for c in df_manq.columns if any(k in c.lower() for k in ["manquant", "qte", "quantite", "qty", "nombre"])]
-        col_of_候选 = [c for c in df_manq.columns if any(k in c.lower() for k in ["of", "ordre", "code", "machine"])]
-        
-        col_qte = col_qte_候选[0] if col_qte_候选 else df_manq.columns[-1]
-        col_of = col_of_候选[0] if col_of_候选 else df_manq.columns[0]
-        col_article = [c for c in df_manq.columns if any(k in c.lower() for k in ["ref", "art", "designation", "libelle"])]
-        col_art_name = col_article[0] if col_article else df_manq.columns[1] if len(df_manq.columns) > 1 else col_of
+        # Repérage des colonnes clés basées sur ton export
+        col_article = next((c for c in df_manq.columns if 'article' in c.lower() and 'désignation' not in c.lower() and 'designation' not in c.lower()), df_manq.columns[2] if len(df_manq.columns) > 2 else df_manq.columns[0])
+        col_designation = next((c for c in df_manq.columns if 'désignation' in c.lower() or 'designation' in c.lower() or 'libelle' in c.lower()), df_manq.columns[3] if len(df_manq.columns) > 3 else col_article)
+        col_of = next((c for c in df_manq.columns if any(k in c.lower() for k in ["ordre", "of", "code"])), df_manq.columns[1] if len(df_manq.columns) > 1 else df_manq.columns[0])
+        col_qte = next((c for c in df_manq.columns if any(k in c.lower() for k in ["manquant", "qte", "quantite", "qty"])), df_manq.columns[-1])
 
-        # Conversion propre en numérique pour les calculs
+        # Conversion propre en numérique pour la quantité
         df_manq[col_qte] = pd.to_numeric(df_manq[col_qte], errors='coerce').fillna(0)
 
-        # --- KPI 1 : Nombre moyen de manquant par OF ---
-        # Calcul par OF distinct
+        # --- KPI 1 & 2 ---
         if col_of in df_manq.columns:
-            moyenne_par_of = df_manq.groupby(col_of)[col_qte].sum().mean()
+            moyenne_par_of = df_manq.groupby(col_of)[col_qte].count().mean() # Nombre de lignes de manquants par OF en moyenne
             total_of_count = df_manq[col_of].nunique()
         else:
-            moyenne_par_of = df_manq[col_qte].mean()
-            total_of_count = len(df_manq)
+            moyenne_par_of = len(df_manq)
+            total_of_count = 1
 
-        # --- KPI 2 : Top 3 des manquants (par article / désignation) ---
-        top_3 = df_manq.groupby(col_art_name)[col_qte].sum().reset_index().nlargest(3, col_qte)
+        # --- KPI 3 : Top 3 par Occurrences (Article + Désignation) ---
+        # On groupe par Code Article et Désignation pour compter combien de fois il apparaît
+        top_3 = (
+            df_manq.groupby([col_article, col_designation])
+            .size()
+            .reset_index(name='Occurrences')
+            .nlargest(3, 'Occurrences')
+        )
 
         # Affichage des KPIs
         kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("Nombre moyen de manquants / OF", f"{moyenne_par_of:.2f}")
+        kpi1.metric("Lignes de manquants / OF (Moy)", f"{moyenne_par_of:.2f}")
         kpi2.metric("Total OF suivis", f"{total_of_count}")
-        kpi3.metric("Articles en rupture totale", f"{len(df_manq[df_manq[col_qte] > 0])}")
+        kpi3.metric("Total références en manquant", f"{df_manq[col_article].nunique()}")
 
-        st.markdown("### 🏆 Top 3 des Articles Manquants")
+        st.markdown("### 🏆 Top 3 des Articles les plus bloquants (par Fréquence d'Apparition)")
         if not top_3.empty:
             cols_podium = st.columns(3)
             medailles = ["🥇", "🥈", "🥉"]
-            for idx, row in top_3.reset_index().iterrows():
+            for idx, row in top_3.reset_index(drop=True).iterrows():
                 if idx < 3:
                     with cols_podium[idx]:
                         st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[idx]}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; font-size: 13px; font-weight: bold;'>{row[col_art_name]}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; color: #ff4b4b; font-size: 16px; font-weight: bold;'>{row[col_qte]} manquants</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align: center; font-size: 13px; font-weight: bold;'>Réf: {row[col_article]}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align: center; font-size: 12px; color: #555;'>{row[col_designation]}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align: center; color: #ff4b4b; font-size: 16px; font-weight: bold;'>{row['Occurrences']} fois</div>", unsafe_allow_html=True)
         
         st.divider()
         st.markdown("### 📋 Tableau Détaillé des Manquants")
