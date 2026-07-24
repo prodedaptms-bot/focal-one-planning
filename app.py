@@ -462,9 +462,22 @@ with tabs[6]:
             else:
                 df_manquants_upl = pd.read_excel(uploaded_file)
             
-            st.session_state.data["manquants"] = df_manquants_upl.to_dict(orient="records")
+            # Récupération des données existantes pour les cumuler
+            donnees_existantes = st.session_state.data.get("manquants", [])
+            
+            if donnees_existantes:
+                df_existant = pd.DataFrame(donnees_existantes)
+                # Concaténation des anciennes et nouvelles données
+                df_cumule = pd.concat([df_existant, df_manquants_upl], ignore_index=True)
+                # Suppression des doublons stricts éventuels
+                df_cumule = df_cumule.drop_duplicates()
+            else:
+                df_cumule = df_manquants_upl
+                
+            # Sauvegarde du cumul dans la session
+            st.session_state.data["manquants"] = df_cumule.to_dict(orient="records")
             save_data()
-            st.success("Fichier des manquants importé avec succès !")
+            st.success("Fichier importé et cumulé avec succès !")
             st.rerun()
         except Exception as ex:
             st.error(f"Erreur lors de la lecture du fichier : {ex}")
@@ -481,14 +494,11 @@ with tabs[6]:
     manquants_data = st.session_state.data.get("manquants", [])
 
     if not manquants_data:
-        st.info("Aucun manquant enregistré. Importez un fichier CSV ou Excel pour commencer.")
+        st.info("Aucun manquant enregistré. Importez un ou plusieurs fichiers pour commencer le cumul.")
     else:
         df_manq = pd.DataFrame(manquants_data)
         
-        # --- Détection automatique robuste des colonnes de ton fichier ---
-        cols_lower = {c.lower(): c for c in df_manq.columns}
-        
-        # Repérage des colonnes clés basées sur ton export
+        # --- Détection automatique robuste des colonnes ---
         col_article = next((c for c in df_manq.columns if 'article' in c.lower() and 'désignation' not in c.lower() and 'designation' not in c.lower()), df_manq.columns[2] if len(df_manq.columns) > 2 else df_manq.columns[0])
         col_designation = next((c for c in df_manq.columns if 'désignation' in c.lower() or 'designation' in c.lower() or 'libelle' in c.lower()), df_manq.columns[3] if len(df_manq.columns) > 3 else col_article)
         col_of = next((c for c in df_manq.columns if any(k in c.lower() for k in ["ordre", "of", "code"])), df_manq.columns[1] if len(df_manq.columns) > 1 else df_manq.columns[0])
@@ -497,16 +507,15 @@ with tabs[6]:
         # Conversion propre en numérique pour la quantité
         df_manq[col_qte] = pd.to_numeric(df_manq[col_qte], errors='coerce').fillna(0)
 
-        # --- KPI 1 & 2 ---
+        # --- Compteur et KPIs ---
         if col_of in df_manq.columns:
-            moyenne_par_of = df_manq.groupby(col_of)[col_qte].count().mean() # Nombre de lignes de manquants par OF en moyenne
-            total_of_count = df_manq[col_of].nunique()
+            total_of_count = df_manq[col_of].nunique()  # Nombre d'OF uniques cumulés
+            moyenne_par_of = len(df_manq) / total_of_count if total_of_count > 0 else 0
         else:
-            moyenne_par_of = len(df_manq)
             total_of_count = 1
+            moyenne_par_of = len(df_manq)
 
-        # --- KPI 3 : Top 3 par Occurrences (Article + Désignation) ---
-        # On groupe par Code Article et Désignation pour compter combien de fois il apparaît
+        # --- Top 3 par Occurrences (Article + Désignation) ---
         top_3 = (
             df_manq.groupby([col_article, col_designation])
             .size()
@@ -514,13 +523,13 @@ with tabs[6]:
             .nlargest(3, 'Occurrences')
         )
 
-        # Affichage des KPIs
+        # Affichage des KPIs incluant le nombre d'OF analysés
         kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("Lignes de manquants / OF (Moy)", f"{moyenne_par_of:.2f}")
-        kpi2.metric("Total OF suivis", f"{total_of_count}")
-        kpi3.metric("Total références en manquant", f"{df_manq[col_article].nunique()}")
+        kpi1.metric("Nombre d'OF analysés (Cumul)", f"{total_of_count}")
+        kpi2.metric("Lignes de manquants / OF (Moy)", f"{moyenne_par_of:.2f}")
+        kpi3.metric("Références uniques en manquant", f"{df_manq[col_article].nunique()}")
 
-        st.markdown("### 🏆 Top 3 des Articles les plus bloquants (par Fréquence d'Apparition)")
+        st.markdown("### 🏆 Top 3 des Articles les plus bloquants (sur le cumul des OF)")
         if not top_3.empty:
             cols_podium = st.columns(3)
             medailles = ["🥇", "🥈", "🥉"]
@@ -530,8 +539,8 @@ with tabs[6]:
                         st.markdown(f"<div style='text-align: center; font-size: 20px;'>{medailles[idx]}</div>", unsafe_allow_html=True)
                         st.markdown(f"<div style='text-align: center; font-size: 13px; font-weight: bold;'>Réf: {row[col_article]}</div>", unsafe_allow_html=True)
                         st.markdown(f"<div style='text-align: center; font-size: 12px; color: #555;'>{row[col_designation]}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='text-align: center; color: #ff4b4b; font-size: 16px; font-weight: bold;'>{row['Occurrences']} fois</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align: center; color: #ff4b4b; font-size: 16px; font-weight: bold;'>Présent {row['Occurrences']} fois</div>", unsafe_allow_html=True)
         
         st.divider()
-        st.markdown("### 📋 Tableau Détaillé des Manquants")
+        st.markdown(f"### 📋 Tableau Global Consolidé ({len(df_manq)} lignes de manquants)")
         st.dataframe(df_manq, use_container_width=True, hide_index=True)
