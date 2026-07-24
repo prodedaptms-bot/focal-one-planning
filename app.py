@@ -112,6 +112,40 @@ with tabs[0]:
     
     st.divider()
 
+    # --- BOUTON / SECTION GANTT SUR LE DASHBOARD ---
+    with st.expander("📊 Afficher le Diagramme de Gantt de la production", expanded=False):
+        if en_cours:
+            data_gantt = []
+            for e in en_cours:
+                data_gantt.append({
+                    "Task": e.get("id"),
+                    "Start": e.get("debut"),
+                    "Finish": e.get("fin_prevue"),
+                    "Technicien": e.get("tech", "Non assigné"),
+                    "Statut": e.get("statut")
+                })
+            df_gantt = pd.DataFrame(data_gantt)
+            try:
+                import plotly.express as px
+                fig = px.timeline(
+                    df_gantt, 
+                    x_start="Start", 
+                    x_end="Finish", 
+                    y="Task", 
+                    color="Technicien",
+                    hover_data=["Statut"],
+                    title="Planning de Gantt des interventions en cours"
+                )
+                fig.update_yaxes(categoryorder="total ascending")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as ex:
+                st.info("Module Plotly non disponible, affichage du tableau de Gantt brut :")
+                st.dataframe(df_gantt, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucune donnée à afficher dans le Gantt (pas de machine en cours).")
+
+    st.divider()
+
     st.write("### 📅 Suivi Visuel des Machines (Tri chronologique)")
     
     if en_cours:
@@ -192,7 +226,6 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("⚠️ Administration & Sauvegarde de la Base")
     
-    # Sauvegarde et Import Global
     col_dl, col_up = st.columns(2)
     with col_dl:
         json_data = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
@@ -360,7 +393,6 @@ with tabs[2]:
             st.info("Pas assez de machines en cours pour ce technicien.")
     st.divider()
     
-    # Affichage trié chronologiquement pour la gestion des actions rapides
     equipements_actives_triees = sorted(
         [e for e in st.session_state.data["equipements"] if e.get("statut") in ["Actif", "Bloqué"]],
         key=lambda x: x.get("debut", "")
@@ -487,7 +519,6 @@ with tabs[6]:
     
     col_upload, col_raz = st.columns([3, 1])
     
-    # Bouton de téléversement de fichier (CSV ou Excel)
     uploaded_file = col_upload.file_uploader("Importer le fichier des manquants (CSV ou Excel)", type=["csv", "xlsx"])
     if uploaded_file is not None:
         try:
@@ -496,19 +527,15 @@ with tabs[6]:
             else:
                 df_manquants_upl = pd.read_excel(uploaded_file)
             
-            # Récupération des données existantes pour les cumuler
             donnees_existantes = st.session_state.data.get("manquants", [])
             
             if donnees_existantes:
                 df_existant = pd.DataFrame(donnees_existantes)
-                # Concaténation des anciennes et nouvelles données
                 df_cumule = pd.concat([df_existant, df_manquants_upl], ignore_index=True)
-                # Suppression des doublons stricts éventuels
                 df_cumule = df_cumule.drop_duplicates()
             else:
                 df_cumule = df_manquants_upl
                 
-            # Sauvegarde du cumul dans la session
             st.session_state.data["manquants"] = df_cumule.to_dict(orient="records")
             save_data()
             st.success("Fichier importé et cumulé avec succès !")
@@ -516,7 +543,6 @@ with tabs[6]:
         except Exception as ex:
             st.error(f"Erreur lors de la lecture du fichier : {ex}")
 
-    # Bouton Remise à Zéro des manquants
     if col_raz.button("🗑️ Remise à zéro manquants", help="Effacer toutes les données de manquants"):
         st.session_state.data["manquants"] = []
         save_data()
@@ -532,24 +558,20 @@ with tabs[6]:
     else:
         df_manq = pd.DataFrame(manquants_data)
         
-        # --- Détection automatique robuste des colonnes ---
         col_article = next((c for c in df_manq.columns if 'article' in c.lower() and 'désignation' not in c.lower() and 'designation' not in c.lower()), df_manq.columns[2] if len(df_manq.columns) > 2 else df_manq.columns[0])
         col_designation = next((c for c in df_manq.columns if 'désignation' in c.lower() or 'designation' in c.lower() or 'libelle' in c.lower()), df_manq.columns[3] if len(df_manq.columns) > 3 else col_article)
         col_of = next((c for c in df_manq.columns if any(k in c.lower() for k in ["ordre", "of", "code"])), df_manq.columns[1] if len(df_manq.columns) > 1 else df_manq.columns[0])
         col_qte = next((c for c in df_manq.columns if any(k in c.lower() for k in ["manquant", "qte", "quantite", "qty"])), df_manq.columns[-1])
 
-        # Conversion propre en numérique pour la quantité
         df_manq[col_qte] = pd.to_numeric(df_manq[col_qte], errors='coerce').fillna(0)
 
-        # --- Compteur et KPIs ---
         if col_of in df_manq.columns:
-            total_of_count = df_manq[col_of].nunique()  # Nombre d'OF uniques cumulés
+            total_of_count = df_manq[col_of].nunique()
             moyenne_par_of = len(df_manq) / total_of_count if total_of_count > 0 else 0
         else:
             total_of_count = 1
             moyenne_par_of = len(df_manq)
 
-        # --- Top 3 par Occurrences (Article + Désignation) ---
         top_3 = (
             df_manq.groupby([col_article, col_designation])
             .size()
@@ -557,7 +579,6 @@ with tabs[6]:
             .nlargest(3, 'Occurrences')
         )
 
-        # Affichage des KPIs incluant le nombre d'OF analysés
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric("Nombre d'OF analysés (Cumul)", f"{total_of_count}")
         kpi2.metric("Lignes de manquants / OF (Moy)", f"{moyenne_par_of:.2f}")
