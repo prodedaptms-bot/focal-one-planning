@@ -479,7 +479,7 @@ with tabs[5]:
     st.subheader("Pilotage et Performance Globale")
     
     equipements = st.session_state.data.get("equipements", [])
-    terminees = [e for e in equipements if e.get("statut"] == "Terminé" and e.get("fin_reelle")]
+    terminees = [e for e in equipements if e.get("statut") == "Terminé" and e.get("fin_reelle")]
     
     if not terminees:
         st.info("Terminez quelques interventions pour voir apparaître les indicateurs.")
